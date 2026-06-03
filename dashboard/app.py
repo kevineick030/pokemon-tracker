@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-load_dotenv(os.path.join(ROOT_DIR, ".env"))
+load_dotenv(os.path.join(ROOT_DIR, ".env"), override=True)
 
 import config  # noqa: E402  (nutzt dieselbe DB_PATH / CARD_IMAGES_DIR)
 import database as db  # noqa: E402

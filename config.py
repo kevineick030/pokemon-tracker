@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True: Werte aus der .env haben Vorrang vor bereits gesetzten
+# Umgebungsvariablen (sonst kann eine leere OS-Variable die .env aushebeln).
+load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).resolve().parent
 
