@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Pokémon Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='charts.js') }}"></script>
+</head>
+<body>
+{% if current_user.is_authenticated %}
+  <header class="topbar">
+    <div class="brand">🃏 Pokémon Tracker</div>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}" class="{{ 'active' if active=='index' }}">Übersicht</a>
+      <a href="{{ url_for('sammlung') }}" class="{{ 'active' if active=='sammlung' }}">Sammlung</a>
+      <a href="{{ url_for('watchlist') }}" class="{{ 'active' if active=='watchlist' }}">Watchlist</a>
+      <a href="{{ url_for('scalp') }}" class="{{ 'active' if active=='scalp' }}">Scalp</a>
+      <a href="{{ url_for('releases') }}" class="{{ 'active' if active=='releases' }}">Releases</a>
+      <a href="{{ url_for('budget') }}" class="{{ 'active' if active=='budget' }}">Budget</a>
+      <a href="{{ url_for('logout') }}" class="logout">Logout</a>
+    </nav>
+  </header>
+{% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="flash flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">Pokémon Karten Tracker · Dashboard</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

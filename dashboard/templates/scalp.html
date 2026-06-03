@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Scalp · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<h1>💼 Scalp-Targets</h1>
+
+{% if targets %}
+<section class="card">
+  <h2>Status-Grid</h2>
+  <div class="grid-scroll">
+    <table class="data-table scalp-grid">
+      <thead>
+        <tr>
+          <th>Produkt</th>
+          <th>Ziel</th>
+          {% for r in retailers %}<th class="rot">{{ r.name }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in targets %}
+        <tr>
+          <td>
+            <a href="{{ url_for('scalp_detail', scalp_id=t.id) }}">{{ t.product_name }}</a>
+            {% if not t.active %}<span class="muted">⏸️</span>{% endif %}
+            <div class="muted small">{{ t.product_type or '?' }}</div>
+          </td>
+          <td>{{ ('%.2f €'|format(t.retail_price_target)) if t.retail_price_target else '–' }}</td>
+          {% for r in t.retailers %}
+            {% if r.in_stock is true %}
+              <td class="cell in" title="{{ r.price }}">✅</td>
+            {% elif r.in_stock is false %}
+              <td class="cell out">❌</td>
+            {% else %}
+              <td class="cell unk">·</td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">✅ verfügbar · ❌ ausverkauft · · noch kein Check</p>
+</section>
+
+<section class="card">
+  <h2>📦 Restocks (24h)</h2>
+  {% if restocks %}
+    <ul class="timeline">
+      {% for r in restocks %}
+        <li>
+          <span class="time">{{ r.checked_at[:16]|replace('T', ' ') }}</span>
+          <span>{{ r.product_name }} <span class="muted">@ {{ r.retailer_name }}</span>
+            {{ ('– %.2f €'|format(r.price)) if r.price is not none else '' }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Keine Restock-Events in den letzten 24h.</p>
+  {% endif %}
+</section>
+{% else %}
+<p class="muted">Keine Scalp-Targets. Schick dem Bot ein Foto eines versiegelten
+Produkts oder nutze <code>/scalp_add &lt;produkt&gt; &lt;ziel_preis&gt;</code>.</p>
+{% endif %}
+
+{% endblock %}

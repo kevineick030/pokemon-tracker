@@ -1,0 +1,102 @@
+{
+  "_hinweis": "CSS-Selektoren sind Startwerte und MÜSSEN ggf. an die aktuelle HTML-Struktur der Händler angepasst werden. Platzhalter {query} wird URL-kodiert ersetzt. scrape_method: 'requests' (leicht) oder 'playwright' (Browser, optional).",
+  "mueller": {
+    "search_url": "https://www.mueller.de/search/?q={query}",
+    "stock_selector": ".mu-product-availability, .product-availability",
+    "stock_in_keywords": ["Verfügbar", "Auf Lager", "Sofort lieferbar"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft", "Vergriffen"],
+    "price_selector": ".mu-price, .price-current",
+    "scrape_method": "playwright",
+    "wait_for": ".mu-product-tile, .product-detail"
+  },
+  "smythstoys": {
+    "search_url": "https://www.smythstoys.com/de/de-de/search/?text={query}",
+    "stock_selector": ".stock-message, .product-availability",
+    "stock_in_keywords": ["Verfügbar", "Auf Lager", "Lieferbar"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft"],
+    "price_selector": ".price, .product-price",
+    "scrape_method": "playwright",
+    "wait_for": ".product-list, .product-detail"
+  },
+  "mediamarkt": {
+    "search_url": "https://www.mediamarkt.de/de/search.html?query={query}",
+    "stock_selector": "[data-test='product-availability'], .availability",
+    "stock_in_keywords": ["Verfügbar", "Lieferbar", "Abholbereit"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft", "derzeit nicht"],
+    "price_selector": "[data-test='product-price'], .price",
+    "scrape_method": "playwright",
+    "wait_for": "[data-test='mms-search-srp-productlist']"
+  },
+  "saturn": {
+    "search_url": "https://www.saturn.de/de/search.html?query={query}",
+    "stock_selector": "[data-test='product-availability'], .availability",
+    "stock_in_keywords": ["Verfügbar", "Lieferbar", "Abholbereit"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft", "derzeit nicht"],
+    "price_selector": "[data-test='product-price'], .price",
+    "scrape_method": "playwright",
+    "wait_for": "[data-test='mms-search-srp-productlist']"
+  },
+  "galeria": {
+    "search_url": "https://www.galeria.de/search/?q={query}",
+    "stock_selector": ".product-availability, .availability-status",
+    "stock_in_keywords": ["Verfügbar", "Auf Lager", "Lieferbar"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft"],
+    "price_selector": ".product-price, .price",
+    "scrape_method": "requests",
+    "wait_for": null
+  },
+  "rossmann": {
+    "search_url": "https://www.rossmann.de/de/search?q={query}",
+    "stock_selector": ".rm-availability, .availability",
+    "stock_in_keywords": ["Verfügbar", "Auf Lager", "Lieferbar"],
+    "stock_out_keywords": ["Nicht verfügbar", "Ausverkauft"],
+    "price_selector": ".rm-price__current, .price",
+    "scrape_method": "requests",
+    "wait_for": null
+  },
+  "thalia": {
+    "search_url": "https://www.thalia.de/suche?sq={query}",
+    "stock_selector": ".verfuegbarkeit, .element-verfuegbarkeit",
+    "stock_in_keywords": ["lieferbar", "Verfügbar", "Sofort"],
+    "stock_out_keywords": ["nicht lieferbar", "vergriffen", "Ausverkauft"],
+    "price_selector": ".preis, .element-preis-aktuell",
+    "scrape_method": "requests",
+    "wait_for": null
+  },
+  "amazon": {
+    "search_url": "https://www.amazon.de/s?k={query}",
+    "stock_selector": "#availability, .a-color-success, .a-color-state",
+    "stock_in_keywords": ["Auf Lager", "Verfügbar", "Lieferbar"],
+    "stock_out_keywords": ["Derzeit nicht verfügbar", "nicht auf Lager", "Nicht verfügbar"],
+    "price_selector": ".a-price .a-offscreen, #priceblock_ourprice",
+    "scrape_method": "playwright",
+    "wait_for": "[data-component-type='s-search-result']"
+  },
+  "pokemoncenter": {
+    "search_url": "https://www.pokemoncenter.com/de-de/search/{query}",
+    "stock_selector": ".product-availability, .add-to-cart",
+    "stock_in_keywords": ["In den Warenkorb", "Verfügbar", "Add to Cart"],
+    "stock_out_keywords": ["Ausverkauft", "Sold Out", "Nicht verfügbar"],
+    "price_selector": ".product-price, .price",
+    "scrape_method": "playwright",
+    "wait_for": ".product-grid, .product-detail"
+  },
+  "pokemoncards24": {
+    "search_url": "https://www.pokemoncards24.com/?s={query}&post_type=product",
+    "stock_selector": ".stock, .availability",
+    "stock_in_keywords": ["Vorrätig", "Auf Lager", "lieferbar"],
+    "stock_out_keywords": ["Nicht vorrätig", "Ausverkauft", "vergriffen"],
+    "price_selector": ".price .amount, .price",
+    "scrape_method": "requests",
+    "wait_for": null
+  },
+  "tradingcards": {
+    "search_url": "https://www.tradingcards.de/search?q={query}",
+    "stock_selector": ".product--availability, .availability",
+    "stock_in_keywords": ["verfügbar", "Auf Lager", "lieferbar"],
+    "stock_out_keywords": ["nicht verfügbar", "Ausverkauft", "vergriffen"],
+    "price_selector": ".product--price, .price",
+    "scrape_method": "requests",
+    "wait_for": null
+  }
+}

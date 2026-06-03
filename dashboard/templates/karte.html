@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ card.card_name }} · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('sammlung') }}" class="back">← Zur Sammlung</a>
+
+<div class="detail-grid">
+  <div class="card detail-img">
+    {% if image %}
+      <img src="{{ url_for('card_image', filename=image) }}" alt="{{ card.card_name }}">
+    {% else %}
+      <div class="no-img big">🃏</div>
+    {% endif %}
+  </div>
+
+  <div class="card detail-info">
+    <h1>{{ card.card_name }}</h1>
+    <table class="kv">
+      <tr><th>Set</th><td>{{ card.set_name or '—' }}</td></tr>
+      <tr><th>Nummer</th><td>{{ card.card_number or '—' }}</td></tr>
+      <tr><th>Rarität</th><td>{{ card.rarity or '—' }}</td></tr>
+      <tr><th>Sprache</th><td>{{ card.language or '—' }}</td></tr>
+      <tr><th>Zustand</th><td>{{ card.condition or '—' }}</td></tr>
+      <tr><th>Kaufdatum</th><td>{{ (card.purchase_date or '')[:10] }}</td></tr>
+      <tr><th>Kaufpreis</th><td>{{ '%.2f'|format(card.purchase_price) }} €</td></tr>
+      <tr><th>Aktueller Wert</th><td>{{ ('%.2f €'|format(market_value)) if market_value is not none else '–' }}</td></tr>
+    </table>
+    {% if gain is not none %}
+      <div class="stat-value {{ 'up' if gain >= 0 else 'down' }}" style="font-size:1.6rem">
+        {{ '%+.2f'|format(gain) }} € seit Kauf
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card">
+  <h2>Wertentwicklung (30 Tage)</h2>
+  {% if chart_values %}
+    <canvas id="cardChart" height="90"></canvas>
+  {% else %}
+    <p class="muted">Noch keine Verlaufsdaten für diese Karte.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Aktuelle DE-Angebote (live)</h2>
+  {% if offers %}
+    <table class="data-table">
+      <thead><tr><th>Preis</th><th>Zustand</th><th>Sprache</th><th>Verkäufer</th><th>Bewertung</th></tr></thead>
+      <tbody>
+        {% for o in offers %}
+        <tr>
+          <td><strong>{{ '%.2f'|format(o.price) }} €</strong></td>
+          <td>{{ o.condition }}</td>
+          <td>{{ o.language }}</td>
+          <td>{{ o.seller_name }}</td>
+          <td>{{ '%.0f'|format(o.seller_reputation) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Keine Live-Angebote verfügbar (Produkt unbekannt oder API nicht erreichbar).</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{% if chart_values %}
+<script>
+  renderLineChart('cardChart', {{ chart_labels|tojson }}, {{ chart_values|tojson }}, 'Marktwert (€)');
+</script>
+{% endif %}
+{% endblock %}

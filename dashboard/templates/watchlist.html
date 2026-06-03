@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Watchlist · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<h1>👁 Watchlist</h1>
+
+{% if rows %}
+<section class="card">
+  <table class="data-table watchlist-table">
+    <thead>
+      <tr>
+        <th>Karte</th><th>Marktpreis</th><th>Trend</th>
+        <th>7-Tage</th><th>Letzter Alert</th><th>Deal-Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="wl-row" data-id="{{ r.id }}"
+          data-spark="{{ r.sparkline|tojson }}"
+          data-name="{{ r.name }}">
+        <td>{{ r.name }}</td>
+        <td>{{ ('%.2f €'|format(r.market_price)) if r.market_price is not none else '–' }}</td>
+        <td class="trend {{ 'up' if r.trend.trend=='steigend' else ('down' if r.trend.trend=='fallend' else '') }}">
+          {{ r.trend.emoji }} {{ r.trend.trend }}
+        </td>
+        <td><canvas class="spark" width="120" height="32"></canvas></td>
+        <td>
+          {% if r.last_alert %}
+            {{ '%.2f €'|format(r.last_alert.price) }}<br>
+            <span class="muted small">{{ r.last_alert.sent_at[:10] }}</span>
+          {% else %}<span class="muted">–</span>{% endif %}
+        </td>
+        <td>
+          {% if r.last_alert %}<span class="score">{{ r.last_alert.deal_score }}</span>{% else %}–{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Preis-Chart: <span id="selName" class="muted">Zeile anklicken</span></h2>
+  <canvas id="wlChart" height="90"></canvas>
+</section>
+{% else %}
+<p class="muted">Watchlist ist leer. Füge Karten über den Bot hinzu (/add).</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  initWatchlist();
+</script>
+{% endblock %}

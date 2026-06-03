@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Budget · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<h1>💶 Budget</h1>
+
+<section class="hero-grid budget-stats">
+  <div class="card stat-big">
+    <div class="stat-label">Diese Woche</div>
+    <div class="stat-value">{{ '%.2f'|format(spent_week) }} €</div>
+    {% if weekly_budget > 0 %}
+      <div class="muted">von {{ '%.2f'|format(weekly_budget) }} € · noch {{ '%.2f'|format(weekly_budget - spent_week) }} €</div>
+    {% endif %}
+  </div>
+  <div class="card stat-big">
+    <div class="stat-label">Dieser Monat</div>
+    <div class="stat-value">{{ '%.2f'|format(spent_month) }} €</div>
+  </div>
+  <div class="card stat-big">
+    <div class="stat-label">Gesamt</div>
+    <div class="stat-value">{{ '%.2f'|format(spent_total) }} €</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Ausgaben nach Monat</h2>
+  {% if chart_values %}
+    <canvas id="budgetChart" height="90"></canvas>
+  {% else %}
+    <p class="muted">Noch keine Ausgaben erfasst.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Alle Transaktionen</h2>
+  {% if transactions %}
+    <table class="data-table">
+      <thead><tr><th>Datum</th><th>Beschreibung</th><th>Betrag</th></tr></thead>
+      <tbody>
+        {% for t in transactions %}
+        <tr>
+          <td>{{ t.date[:10] }}</td>
+          <td>{{ t.description or '—' }}</td>
+          <td>{{ '%.2f'|format(t.amount) }} €</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Keine Transaktionen.</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{% if chart_values %}
+<script>
+  renderBarChart('budgetChart', {{ chart_labels|tojson }}, {{ chart_values|tojson }}, 'Ausgaben (€)');
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Übersicht · Pokémon Tracker{% endblock %}
+{% block content %}
+
+{% set up = change.change >= 0 %}
+<section class="hero-grid">
+  <div class="card stat-big">
+    <div class="stat-label">Gesamtwert Sammlung</div>
+    <div class="stat-value">
+      {{ '%.2f'|format(summary.total_market) }} €
+      <span class="trend {{ 'up' if up else 'down' }}">
+        {{ '▲' if up else '▼' }} {{ '%+.1f'|format(change.change_pct) }}%
+      </span>
+    </div>
+    <div class="muted">{{ summary.count }} Karten · Δ Vorwoche {{ '%+.2f'|format(change.change) }} €</div>
+  </div>
+
+  <div class="card stat-big">
+    <div class="stat-label">Gewinn / Verlust seit Kauf</div>
+    {% set pos = summary.profit >= 0 %}
+    <div class="stat-value {{ 'up' if pos else 'down' }}">
+      {{ '%+.2f'|format(summary.profit) }} €
+    </div>
+    <div class="muted">
+      Einstand {{ '%.2f'|format(summary.total_cost) }} € ·
+      {{ '%+.1f'|format(summary.profit_pct) }}%
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Wertentwicklung (30 Tage)</h2>
+  {% if chart_values %}
+    <canvas id="valueChart" height="90"></canvas>
+  {% else %}
+    <p class="muted">Noch keine Wertdaten. Die tägliche Bewertung läuft um 02:00 Uhr.</p>
+  {% endif %}
+</section>
+
+<div class="two-col">
+  <section class="card">
+    <h2>🏆 Top 3 Gewinner (Woche)</h2>
+    {% if winners %}
+      <ul class="list">
+        {% for w in winners %}
+          <li>
+            <a href="{{ url_for('karte', card_id=w.id) }}">{{ w.name }}</a>
+            <span class="trend {{ 'up' if w.gain >= 0 else 'down' }}">
+              {{ '%+.2f'|format(w.gain) }} €
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Nicht genug Verlaufsdaten.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>🚨 Letzte Alerts</h2>
+    {% if alerts %}
+      <ul class="list">
+        {% for a in alerts %}
+          <li>
+            <span>{{ a.card_name }}</span>
+            <span class="muted">{{ '%.2f'|format(a.price) }} € · Score {{ a.deal_score }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Noch keine Alerts.</p>
+    {% endif %}
+  </section>
+</div>
+
+<!-- Scalping-Widgets -->
+<section class="hero-grid">
+  <div class="card stat-big">
+    <div class="stat-label">💼 Aktive Scalp-Targets</div>
+    <div class="stat-value">{{ scalp_active|length }}</div>
+    <div class="muted"><a href="{{ url_for('scalp') }}">Zur Übersicht →</a></div>
+  </div>
+  <div class="card stat-big">
+    <div class="stat-label">💰 Geschätzter Profit-Pool</div>
+    <div class="stat-value {{ 'up' if profit_pool.total >= 0 else 'down' }}">
+      {{ '%+.2f'|format(profit_pool.total) }} €
+    </div>
+    <div class="muted">über {{ profit_pool.counted }} Produkt(e) mit Preisdaten</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>📦 Letzte Restocks</h2>
+  {% if recent_restocks %}
+    <ul class="list">
+      {% for r in recent_restocks %}
+        <li>
+          <span>{{ r.product_name }} <span class="muted">@ {{ r.retailer_name }}</span></span>
+          <span class="muted">
+            {{ ('%.2f €'|format(r.price)) if r.price is not none else '–' }} ·
+            {{ r.checked_at[:16]|replace('T', ' ') }}
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Keine Restocks in den letzten 48h.</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{% if chart_values %}
+<script>
+  renderLineChart('valueChart', {{ chart_labels|tojson }}, {{ chart_values|tojson }}, 'Wert (€)');
+</script>
+{% endif %}
+{% endblock %}

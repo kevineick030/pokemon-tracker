@@ -1,0 +1,5 @@
+# Web-Dashboard (zusätzlich zu requirements.txt im Projekt-Root)
+Flask==3.0.3
+Flask-Login==0.6.3
+gunicorn==23.0.0
+# requests / python-dotenv werden bereits von requirements.txt installiert

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Sammlung · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <div class="filters" id="filters">
+    <button class="chip active" data-filter="all">Alle</button>
+    <button class="chip" data-filter="sir">SIR</button>
+    <button class="chip" data-filter="ir">IR</button>
+    <button class="chip" data-filter="ultra">Ultra Rare</button>
+  </div>
+  <div class="sort">
+    <label>Sortieren:</label>
+    <select id="sortSelect">
+      <option value="value">Wert</option>
+      <option value="gain">Gewinn</option>
+      <option value="date">Kaufdatum</option>
+    </select>
+  </div>
+</div>
+
+{% if cards %}
+<div class="gallery" id="gallery">
+  {% for c in cards %}
+  <a class="poke-card"
+     href="{{ url_for('karte', card_id=c.id) }}"
+     data-rarity="{{ c.rarity_class }}"
+     data-value="{{ c.market_value or 0 }}"
+     data-gain="{{ c.gain or 0 }}"
+     data-date="{{ c.purchase_date }}">
+    <div class="poke-img">
+      {% if c.image %}
+        <img src="{{ url_for('card_image', filename=c.image) }}" alt="{{ c.name }}" loading="lazy">
+      {% else %}
+        <div class="no-img">🃏</div>
+      {% endif %}
+    </div>
+    <div class="poke-info">
+      <div class="poke-name">{{ c.name }}</div>
+      <div class="muted small">{{ c.set_name or '—' }} · {{ c.language or '?' }}/{{ c.condition or '?' }}</div>
+      <div class="poke-prices">
+        <span>Kauf {{ '%.2f'|format(c.purchase_price) }} €</span>
+        <span>→ {{ ('%.2f €'|format(c.market_value)) if c.market_value is not none else '–' }}</span>
+      </div>
+      {% if c.gain is not none %}
+        <div class="trend {{ 'up' if c.gain >= 0 else 'down' }}">{{ '%+.2f'|format(c.gain) }} €</div>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Deine Sammlung ist noch leer. Schick dem Bot ein Karten-Foto!</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  initCollection();
+</script>
+{% endblock %}

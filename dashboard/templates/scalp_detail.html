@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ target.product_name }} · Scalp{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('scalp') }}" class="back">← Zu den Scalp-Targets</a>
+
+<div class="detail-grid">
+  <div class="card detail-img">
+    {% if image %}
+      <img src="{{ url_for('card_image', filename=image) }}" alt="{{ target.product_name }}">
+    {% else %}
+      <div class="no-img big">📦</div>
+    {% endif %}
+  </div>
+  <div class="card detail-info">
+    <h1>{{ target.product_name }}</h1>
+    <table class="kv">
+      <tr><th>Typ</th><td>{{ target.product_type or '—' }}</td></tr>
+      <tr><th>Set</th><td>{{ target.set_name or '—' }}</td></tr>
+      <tr><th>Ziel-Einkaufspreis</th><td>{{ ('%.2f €'|format(target.retail_price_target)) if target.retail_price_target else '—' }}</td></tr>
+      <tr><th>Status</th><td>{{ 'aktiv' if target.active else 'pausiert' }}</td></tr>
+    </table>
+
+    {% if profit and profit.sealed_known %}
+      <h2 style="margin-top:1rem">💼 Profit (live)</h2>
+      <table class="kv">
+        <tr><th>Cardmarket avg</th><td>{{ '%.2f €'|format(profit.cm_avg) }}</td></tr>
+        <tr><th>Realistischer Verkauf</th><td>{{ '%.2f €'|format(profit.sell_realistic) }}</td></tr>
+        <tr><th>Gebühren</th><td>{{ '%.2f €'|format(profit.total_fees) }}</td></tr>
+        <tr><th>Netto</th><td class="{{ 'up' if profit.net_profit >= 0 else 'down' }}">{{ '%+.2f €'|format(profit.net_profit) }}</td></tr>
+        <tr><th>Marge</th><td>{{ '%.1f'|format(profit.margin_pct) }}%</td></tr>
+        <tr><th>Empfehlung</th><td><strong>{{ profit.recommendation }}</strong></td></tr>
+      </table>
+    {% elif profit %}
+      <p class="muted">Kein Cardmarket-Sealed-Preis vorhanden.</p>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card">
+  <h2>Preisverlauf je Händler</h2>
+  {% if price_series %}
+    <canvas id="priceChart" height="90"></canvas>
+  {% else %}
+    <p class="muted">Noch keine Preisdaten der Händler.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Cardmarket Sealed-Preis (90 Tage)</h2>
+  {% if sealed_values %}
+    <canvas id="sealedChart" height="90"></canvas>
+  {% else %}
+    <p class="muted">Noch keine Sealed-Preis-Historie.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Restock-Events</h2>
+  {% if events %}
+    <table class="data-table">
+      <thead><tr><th>Zeitpunkt</th><th>Händler</th><th>Preis</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{{ e.checked_at[:16]|replace('T', ' ') }}</td>
+          <td>{{ e.retailer_name }}</td>
+          <td>{{ ('%.2f €'|format(e.price)) if e.price is not none else '–' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine Restock-Events.</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if price_series %}
+  renderMultiLineChart('priceChart', {{ price_series|tojson }});
+{% endif %}
+{% if sealed_values %}
+  renderLineChart('sealedChart', {{ sealed_labels|tojson }}, {{ sealed_values|tojson }}, 'Sealed avg (€)');
+{% endif %}
+</script>
+{% endblock %}

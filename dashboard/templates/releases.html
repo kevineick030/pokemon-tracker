@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Releases · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<h1>📅 Release-Kalender</h1>
+<p class="muted">Kommende 90 Tage. Pflege über den Bot: <code>/release_add &lt;set&gt; &lt;YYYY-MM-DD&gt; [pre]</code></p>
+
+{% if releases %}
+<section class="card">
+  <table class="data-table">
+    <thead>
+      <tr><th>Datum</th><th>Set</th><th>Produkte</th><th>Pre-Order</th></tr>
+    </thead>
+    <tbody>
+      {% for r in releases %}
+      <tr>
+        <td>{{ r.release_date }}</td>
+        <td><strong>{{ r.set_name }}</strong></td>
+        <td class="muted">{{ r.product_types|join(', ') if r.product_types else '—' }}</td>
+        <td>{{ '🛒 ja' if r.pre_order_available else '–' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<p class="muted">Keine Releases eingetragen.</p>
+{% endif %}
+
+{% endblock %}
