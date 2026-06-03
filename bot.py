@@ -772,25 +772,16 @@ def _pokeprice_analysis(recog: dict) -> dict:
                  query_name, recog.get("set_name"), recog.get("card_number"))
         info["url"] = search_url
         return info
-    log.info("pokeprice: '%s' -> de_low=%s low=%s avg=%s", query_name,
-             card.get("de_low"), card.get("low"), card.get("avg"))
-    # DE-Preis bevorzugen (germanProLow), sonst allgemeiner Cardmarket-low
-    min_price = card.get("de_low") or card.get("low")
-    avg = card.get("avg")
-    info["min_price"] = min_price
-    info["market_price"] = avg
-    # Direkter Produktlink, sonst Suchlink (z.B. bei JP-Karten ohne Preise)
+    log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", query_name,
+             card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
+    # Marktwert = Cardmarket-Trend (entspricht der auf Cardmarket angezeigten
+    # Bewertung). WICHTIG: EU-weit, NICHT nach DE-Verkäufern gefiltert.
+    info["market_price"] = card.get("trend") or card.get("avg")
+    info["avg7"] = card.get("avg7")
+    info["min_price"] = card.get("low")   # EU-weiter Tiefstwert (nur Referenz)
     info["url"] = card.get("url") or search_url
     info["trend"] = pokeprice.trend_from_prices(card)
-    # Deal-Score nur, wenn ein Marktpreis vorliegt (sonst nicht aussagekräftig)
-    if avg and min_price:
-        savings = round((avg - min_price) / avg * 100, 1) if min_price < avg else 0.0
-        # Keine Verkäuferbewertung verfügbar -> Reputation neutral (98 = 0 Punkte)
-        score_info = deal_scorer.compute_score(
-            savings, 98.0, recog.get("condition_estimate") or "NM",
-            info["trend"]["trend"],
-        )
-        info["score"] = score_info["score"]
+    # Kein Deal-Score: ohne echte DE-Einzelangebote nicht aussagekräftig.
     return info
 
 
@@ -820,24 +811,27 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         sub.append(card["rarity"])
     if sub:
         lines.append("📦 " + " · ".join(sub))
-    lines += ["", "💶 *Cardmarket-Preise (EUR):*"]
-    if card.get("de_low"):   # nur zeigen, wenn ein echter DE-Wert vorliegt
-        lines.append(f"🇩🇪 Günstigster DE-Händler: {fmt(card.get('de_low'))}")
+    lines += ["", "💶 *Cardmarket-Wert (EUR, EU-weit):*"]
     lines += [
-        f"• Günstigst (Cardmarket): {fmt(card.get('low'))}",
-        f"• Durchschnitt: {fmt(card.get('avg'))}",
-        f"• Trend: {fmt(card.get('trend'))}",
+        f"• Trend (aktuell): {fmt(card.get('trend'))}",
+        f"• Ø 7 Tage: {fmt(card.get('avg7'))}",
+        f"• Ø 30 Tage: {fmt(card.get('avg30'))}",
         "",
         f"📈 Tendenz: {tr['emoji']} {tr['trend']} ({tr['change_pct']:+.1f}%) | "
         f"💡 {tr['recommendation']}",
     ]
-    has_prices = any(card.get(k) for k in ("de_low", "low", "avg", "trend"))
+    has_prices = any(card.get(k) for k in ("trend", "avg7", "avg30", "avg"))
     if not has_prices:
         lines.append("⚠️ Keine Preisdaten (oft bei JP/sehr neuen Karten) — "
                      "Preis bitte über den Link prüfen.")
     cm_url = card.get("url") or pokeprice.cardmarket_search_url(name)
-    lines.append(f"🔗 Zum Angebot (Cardmarket DE): {cm_url}")
-    lines += ["", "_Quelle: pokemontcg.io · Preise in EUR (Cardmarket EU-Markt)_"]
+    lines += [
+        "",
+        "ℹ️ EU-weite Werte (nicht nach DE-Verkäufern gefiltert).",
+        f"🔗 *Günstigste deutsche Angebote:* {cm_url}",
+        "",
+        "_Quelle: pokemontcg.io_",
+    ]
     return "\n".join(lines)
 
 
@@ -963,31 +957,49 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def _format_recognition(recog: dict, analysis: dict) -> str:
     conf = int(round(recog.get("confidence", 0) * 100))
-    min_price = analysis.get("min_price")
     market = analysis.get("market_price")
     trend = analysis["trend"]
-    score = analysis.get("score")
+    is_free = analysis.get("source") == "pokemontcg"
+
+    def fmt(v):
+        return f"{v:.2f}€" if isinstance(v, (int, float)) and v > 0 else "–"
+
     sealed_line = ""
     if image_recognition.is_sealed(recog.get("product_type")):
         sealed_line = f"📦 Versiegeltes Produkt: {recog.get('product_type')}\n"
-    min_str = f"{min_price:.2f}€" if isinstance(min_price, (int, float)) and min_price > 0 else "–"
-    market_str = f"{market:.2f}€" if isinstance(market, (int, float)) and market > 0 else "–"
+
     url = analysis.get("url")
-    link_line = f"\n🔗 Günstigstes Angebot: {url}" if url else ""
-    return (
+    head = (
         f"🔍 Erkannt! ({conf}% sicher)\n\n"
         f"🃏 {recog.get('card_name', '?')} | {recog.get('card_number', '?')}\n"
         f"📦 {recog.get('set_name', '?')} | ⭐ {recog.get('rarity', '?')}\n"
         f"🌍 {recog.get('language', '?')} | Zustand ca.: "
         f"{recog.get('condition_estimate', '?')}\n"
         f"{sealed_line}\n"
-        f"💰 Günstigster Preis: {min_str}\n"
-        f"📊 Marktpreis (Ø): {market_str}\n"
-        f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
-        f"🏆 Deal-Score: {score if score is not None else '–'}/100"
-        f"{link_line}\n\n"
-        "Was möchtest du tun?"
     )
+
+    if is_free:
+        # Freie Quelle: EU-weite Cardmarket-Werte (keine DE-Filterung möglich)
+        body = f"💶 Cardmarket-Wert (ca., EU-weit): {fmt(market)}\n"
+        if analysis.get("avg7"):
+            body += f"📊 Ø 7 Tage: {fmt(analysis.get('avg7'))}\n"
+        body += f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
+        if url:
+            body += f"🔗 *Echte DE-Angebote* (gefiltert): {url}\n"
+        body += "ℹ️ Werte sind EU-weit. Günstigste *deutsche* Verkäufer siehst du über den Link."
+    else:
+        # Cardmarket-API: echte DE-Angebote + Verkäuferbewertung
+        score = analysis.get("score")
+        body = (
+            f"💰 Günstigstes DE-Angebot: {fmt(analysis.get('min_price'))}\n"
+            f"📊 Marktpreis: {fmt(market)}\n"
+            f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
+            f"🏆 Deal-Score: {score if score is not None else '–'}/100"
+        )
+        if url:
+            body += f"\n🔗 {url}"
+
+    return head + body + "\n\nWas möchtest du tun?"
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
