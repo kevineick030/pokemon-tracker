@@ -15,7 +15,8 @@ PROMPT = (
     "Analysiere dieses Pokémon-Bild (Einzelkarte ODER versiegeltes Produkt). "
     "Gib NUR JSON zurück:\n"
     "{\n"
-    '  "card_name": "exakter Name (bei versiegelten Produkten der Produktname)",\n'
+    '  "card_name": "exakter Name wie auf der Karte (z.B. deutsch)",\n'
+    '  "card_name_en": "offizieller ENGLISCHER Name (z.B. Glurak->Charizard), wichtig fuer Preissuche",\n'
     '  "set_name": "Set-Name",\n'
     '  "card_number": "z.B. 201/165 (leer bei versiegelten Produkten)",\n'
     '  "rarity": "Special Illustration Rare / Illustration Rare / Ultra Rare / andere",\n'
@@ -137,6 +138,10 @@ def recognize(image_path: str) -> dict:
         result["confidence"] = max(0.0, min(1.0, conf))
     except (TypeError, ValueError):
         result["confidence"] = 0.0
+
+    # Englischen Namen absichern (für die Preissuche auf pokemontcg.io)
+    if not result.get("card_name_en"):
+        result["card_name_en"] = result.get("card_name", "")
 
     # product_type absichern: fehlt er, per Heuristik aus Name/Set ableiten
     ptype = (result.get("product_type") or "").strip().lower()

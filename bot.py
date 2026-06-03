@@ -761,10 +761,16 @@ def _pokeprice_analysis(recog: dict) -> dict:
                   "trend": "unbekannt", "recommendation": "egal"},
         "score": None, "best_offer": None, "source": "pokemontcg",
     }
-    card = pokeprice.lookup(recog.get("card_name", ""),
-                            recog.get("set_name"), recog.get("card_number"))
+    # Englischen Namen bevorzugen (pokemontcg.io kennt nur englische Namen)
+    query_name = recog.get("card_name_en") or recog.get("card_name", "")
+    card = pokeprice.lookup(query_name, recog.get("set_name"),
+                            recog.get("card_number"))
     if not card:
+        log.info("pokeprice: keine Treffer fuer '%s' (Set '%s', Nr '%s')",
+                 query_name, recog.get("set_name"), recog.get("card_number"))
         return info
+    log.info("pokeprice: '%s' -> low=%s avg=%s", query_name,
+             card.get("low"), card.get("avg"))
     low, avg = card.get("low"), card.get("avg")
     info["min_price"] = low
     info["market_price"] = avg
@@ -987,8 +993,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
         if not config.cardmarket_enabled():
             text = await loop.run_in_executor(
-                None, _pokeprice_text, name, recog.get("set_name"),
-                recog.get("card_number"),
+                None, _pokeprice_text, recog.get("card_name_en") or name,
+                recog.get("set_name"), recog.get("card_number"),
             )
         else:
             card = db.get_card_by_name(name)
