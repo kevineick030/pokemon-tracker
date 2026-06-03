@@ -38,6 +38,12 @@ GEMINI_MODEL = "gemini-2.5-flash"
 MAX_IMAGE_BYTES = 5 * 1024 * 1024     # max 5 MB pro Foto
 MAX_IMAGES_PER_HOUR = 20              # Rate-Limit Bilderkennung
 
+# --- Pokémon TCG API (pokemontcg.io) als kostenlose Preis-Quelle ---
+# Funktioniert OHNE Key (begrenzte Rate); mit Key (aus dev.pokemontcg.io)
+# höheres Limit. Liefert u.a. Cardmarket-EUR-Preise (low/avg/trend).
+POKEMONTCG_API_KEY = os.getenv("POKEMONTCG_API_KEY", "")
+POKEMONTCG_BASE_URL = "https://api.pokemontcg.io/v2"
+
 # --- Datenbank ---
 DB_PATH = str(BASE_DIR / "pokemon_tracker.db")
 
@@ -172,6 +178,12 @@ def validate() -> list[str]:
     return missing
 
 
+def cardmarket_enabled() -> bool:
+    """True, wenn alle 4 Cardmarket-Tokens gesetzt sind."""
+    return all([MKM_APP_TOKEN, MKM_APP_SECRET, MKM_ACCESS_TOKEN,
+                MKM_ACCESS_TOKEN_SECRET])
+
+
 def optional_status() -> list[str]:
     """Warnungen zu optionalen, nicht gesetzten Funktionen (Bot startet trotzdem)."""
     msgs = []
@@ -180,8 +192,9 @@ def optional_status() -> list[str]:
                     "es werden keine automatischen Alerts gesendet.")
     if not all([MKM_APP_TOKEN, MKM_APP_SECRET, MKM_ACCESS_TOKEN,
                 MKM_ACCESS_TOKEN_SECRET]):
-        msgs.append("Cardmarket-Tokens fehlen -> Preisabfragen, Scan, Marktwerte "
-                    "und Sealed-Preise sind deaktiviert.")
+        msgs.append("Cardmarket-Tokens fehlen -> Einzelkarten-Preise laufen ueber "
+                    "pokemontcg.io; Live-Schnaeppchen-Scanner und Sealed-Preise "
+                    "(versiegelte Produkte) sind eingeschraenkt.")
     if not ANTHROPIC_API_KEY:
         msgs.append("ANTHROPIC_API_KEY fehlt -> der KI-Freitext-Chat ist deaktiviert.")
     if not GEMINI_API_KEY:

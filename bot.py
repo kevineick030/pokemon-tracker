@@ -24,6 +24,7 @@ import image_recognition
 import scalp_targets
 import profit_calculator
 import release_calendar
+import pokeprice
 from cardmarket import (
     CardmarketError, filter_de_offers, market_median, parse_article,
     LANGUAGE_IDS,
@@ -139,6 +140,18 @@ async def cmd_preis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = " ".join(context.args).strip()
     if not name:
         await update.message.reply_text("Nutzung: /preis <Kartenname>")
+        return
+
+    # Ohne Cardmarket: Preise über pokemontcg.io
+    if not config.cardmarket_enabled():
+        import asyncio
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, _pokeprice_text, name, None, None)
+        is_sealed = _set_pending_from_command(context, name, None)
+        keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
+        await update.message.reply_text(
+            text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
+        )
         return
 
     card = db.get_card_by_name(name)
@@ -740,9 +753,80 @@ def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None
 
 
 # ---------------------------------------------------------------- Bilderkennung
+def _pokeprice_analysis(recog: dict) -> dict:
+    """Marktpreis + Deal-Score über pokemontcg.io (wenn kein Cardmarket)."""
+    info = {
+        "product_id": None, "min_price": None, "market_price": None,
+        "trend": {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
+                  "trend": "unbekannt", "recommendation": "egal"},
+        "score": None, "best_offer": None, "source": "pokemontcg",
+    }
+    card = pokeprice.lookup(recog.get("card_name", ""),
+                            recog.get("set_name"), recog.get("card_number"))
+    if not card:
+        return info
+    low, avg = card.get("low"), card.get("avg")
+    info["min_price"] = low
+    info["market_price"] = avg
+    info["trend"] = pokeprice.trend_from_prices(card)
+    if avg and low and low < avg:
+        savings = round((avg - low) / avg * 100, 1)
+    else:
+        savings = 0.0
+    # Keine Verkäuferbewertung verfügbar -> Reputation neutral (98 = 0 Punkte)
+    score_info = deal_scorer.compute_score(
+        savings, 98.0, recog.get("condition_estimate") or "NM",
+        info["trend"]["trend"],
+    )
+    info["score"] = score_info["score"]
+    return info
+
+
+def _pokeprice_text(name: str, set_name: str | None = None,
+                    number: str | None = None) -> str:
+    """Preis-Übersicht über pokemontcg.io (Cardmarket-EUR-Preise)."""
+    card = pokeprice.lookup(name, set_name, number)
+    if not card:
+        return f"💰 *{name}*\n\nKeine Preisdaten gefunden (pokemontcg.io)."
+
+    def fmt(v):
+        return f"{v:.2f}€" if isinstance(v, (int, float)) else "–"
+
+    tr = pokeprice.trend_from_prices(card)
+    lines = [f"💰 *{card['name']}*"]
+    sub = []
+    if card.get("set_name"):
+        sub.append(card["set_name"])
+    if card.get("number"):
+        sub.append(f"Nr. {card['number']}")
+    if card.get("rarity"):
+        sub.append(card["rarity"])
+    if sub:
+        lines.append("📦 " + " · ".join(sub))
+    lines += [
+        "",
+        "💶 *Cardmarket-Preise (EUR):*",
+        f"• Günstigst (low): {fmt(card.get('low'))}",
+        f"• Durchschnitt: {fmt(card.get('avg'))}",
+        f"• Trend: {fmt(card.get('trend'))}",
+        "",
+        f"📈 Tendenz: {tr['emoji']} {tr['trend']} ({tr['change_pct']:+.1f}%) | "
+        f"💡 {tr['recommendation']}",
+        "",
+        "_Quelle: pokemontcg.io_",
+    ]
+    return "\n".join(lines)
+
+
 def _analyze_recognized_card(context: ContextTypes.DEFAULT_TYPE,
                              recog: dict) -> dict:
-    """Cardmarket-Lookup + Marktpreis + Deal-Score für eine erkannte Karte."""
+    """Marktpreis + Deal-Score für eine erkannte Karte.
+
+    Nutzt Cardmarket, falls Tokens gesetzt sind, sonst pokemontcg.io.
+    """
+    if not config.cardmarket_enabled():
+        return _pokeprice_analysis(recog)
+
     info = {
         "product_id": None, "min_price": None, "market_price": None,
         "trend": {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
@@ -899,13 +983,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- 💰 Preis-Check: nur Info, kein dauerhafter Eintrag, Buttons bleiben ---
     if data == "pc:price":
-        card = db.get_card_by_name(name)
-        card_id = card["id"] if card else None
         import asyncio
         loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(
-            None, _price_check_text, context, product_id, name, card_id
-        )
+        if not config.cardmarket_enabled():
+            text = await loop.run_in_executor(
+                None, _pokeprice_text, name, recog.get("set_name"),
+                recog.get("card_number"),
+            )
+        else:
+            card = db.get_card_by_name(name)
+            card_id = card["id"] if card else None
+            text = await loop.run_in_executor(
+                None, _price_check_text, context, product_id, name, card_id
+            )
         keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
         await query.edit_message_text(
             text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard,
