@@ -766,7 +766,7 @@ def _pokeprice_analysis(recog: dict) -> dict:
     # Cardmarket-Suchlink als Fallback (immer verfügbar)
     search_url = pokeprice.cardmarket_search_url(query_name)
     card = pokeprice.lookup(query_name, recog.get("set_name"),
-                            recog.get("card_number"))
+                            recog.get("card_number"), recog.get("rarity"))
     if not card:
         log.info("pokeprice: keine Treffer fuer '%s' (Set '%s', Nr '%s')",
                  query_name, recog.get("set_name"), recog.get("card_number"))
@@ -786,9 +786,9 @@ def _pokeprice_analysis(recog: dict) -> dict:
 
 
 def _pokeprice_text(name: str, set_name: str | None = None,
-                    number: str | None = None) -> str:
-    """Preis-Übersicht über pokemontcg.io (Cardmarket-EUR-Preise)."""
-    card = pokeprice.lookup(name, set_name, number)
+                    number: str | None = None, rarity: str | None = None) -> str:
+    """Preis-Übersicht über die Preis-Quelle (TCGdex)."""
+    card = pokeprice.lookup(name, set_name, number, rarity)
     if not card:
         return (
             f"💰 *{name}*\n\nKeine Preisdaten gefunden (oft bei japanischen "
@@ -1043,6 +1043,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = await loop.run_in_executor(
                 None, _pokeprice_text, recog.get("card_name") or name,
                 recog.get("set_name"), recog.get("card_number"),
+                recog.get("rarity"),
             )
         else:
             card = db.get_card_by_name(name)
