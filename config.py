@@ -34,7 +34,7 @@ CLAUDE_MAX_TOKENS = 500
 
 # --- Google Gemini (Bilderkennung) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.0-flash-exp"
+GEMINI_MODEL = "gemini-2.5-flash"
 MAX_IMAGE_BYTES = 5 * 1024 * 1024     # max 5 MB pro Foto
 MAX_IMAGES_PER_HOUR = 20              # Rate-Limit Bilderkennung
 
