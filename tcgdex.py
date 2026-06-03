@@ -70,13 +70,6 @@ def cardmarket_search_url(name: str) -> str:
     return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}"
 
 
-def _cardmarket_product_url(id_product) -> str | None:
-    if not id_product:
-        return None
-    return (f"https://www.cardmarket.com/de/Pokemon/Products/Singles"
-            f"?idProduct={id_product}")
-
-
 def _search(lang: str, name: str) -> list:
     try:
         r = requests.get(f"{BASE}/{lang}/cards",
@@ -150,8 +143,12 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
 
     d = best_d or {}
     cm = (d.get("pricing") or {}).get("cardmarket") or {}
-    id_product = cm.get("idProduct")
     set_obj = d.get("set") or {}
+
+    # Cardmarket-Suchlink mit dem (deutschen) Kartennamen — die idProduct-URL
+    # funktioniert bei Cardmarket NICHT (landet auf leerer Seite). Die
+    # Namenssuche füllt das Suchfeld und zeigt die richtige Karten-Familie.
+    link = cardmarket_search_url(d.get("name") or name)
 
     return {
         "id": d.get("id"),
@@ -160,7 +157,7 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
         "number": d.get("localId"),
         "rarity": d.get("rarity"),
         "image": d.get("image"),
-        "url": _cardmarket_product_url(id_product) or cardmarket_search_url(name),
+        "url": link,
         "currency": cm.get("unit", "EUR"),
         "low": cm.get("low"),
         "de_low": None,             # TCGdex hat keinen DE-Verkäufer-Preis

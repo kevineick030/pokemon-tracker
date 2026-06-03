@@ -828,7 +828,7 @@ def _pokeprice_text(name: str, set_name: str | None = None,
     lines += [
         "",
         "ℹ️ EU-weite Werte (nicht nach DE-Verkäufern gefiltert).",
-        f"🔗 *Günstigste deutsche Angebote:* {cm_url}",
+        f"🔗 Auf Cardmarket suchen (DE): {cm_url}",
         "",
         "_Quelle: TCGdex · Cardmarket-Preise in EUR_",
     ]
@@ -985,8 +985,8 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
             body += f"📊 Ø 7 Tage: {fmt(analysis.get('avg7'))}\n"
         body += f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
         if url:
-            body += f"🔗 *Echte DE-Angebote* (gefiltert): {url}\n"
-        body += "ℹ️ Werte sind EU-weit. Günstigste *deutsche* Verkäufer siehst du über den Link."
+            body += f"🔗 Auf Cardmarket öffnen (DE): {url}\n"
+        body += "ℹ️ Werte sind EU-weit. Deutsche Verkäufer/Angebote siehst du über den Link."
     else:
         # Cardmarket-API: echte DE-Angebote + Verkäuferbewertung
         score = analysis.get("score")
