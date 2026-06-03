@@ -9,12 +9,22 @@ sind. Hinweis: pokemontcg.io enthält NUR Einzelkarten, keine versiegelten
 Produkte (Displays/ETBs).
 """
 import logging
+import urllib.parse
 
 import requests
 
 import config
 
 log = logging.getLogger(__name__)
+
+
+def cardmarket_search_url(name: str) -> str:
+    """Deutsche Cardmarket-Suchseite für einen Karten-/Produktnamen.
+
+    Fallback, wenn keine direkte Produkt-URL/Preisdaten vorliegen (z.B. bei
+    japanischen oder sehr neuen Karten)."""
+    q = urllib.parse.quote_plus(name or "")
+    return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}"
 
 
 def _headers() -> dict:

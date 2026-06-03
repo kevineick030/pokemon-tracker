@@ -763,11 +763,14 @@ def _pokeprice_analysis(recog: dict) -> dict:
     }
     # Englischen Namen bevorzugen (pokemontcg.io kennt nur englische Namen)
     query_name = recog.get("card_name_en") or recog.get("card_name", "")
+    # Cardmarket-Suchlink als Fallback (immer verfügbar)
+    search_url = pokeprice.cardmarket_search_url(query_name)
     card = pokeprice.lookup(query_name, recog.get("set_name"),
                             recog.get("card_number"))
     if not card:
         log.info("pokeprice: keine Treffer fuer '%s' (Set '%s', Nr '%s')",
                  query_name, recog.get("set_name"), recog.get("card_number"))
+        info["url"] = search_url
         return info
     log.info("pokeprice: '%s' -> de_low=%s low=%s avg=%s", query_name,
              card.get("de_low"), card.get("low"), card.get("avg"))
@@ -776,18 +779,18 @@ def _pokeprice_analysis(recog: dict) -> dict:
     avg = card.get("avg")
     info["min_price"] = min_price
     info["market_price"] = avg
-    info["url"] = card.get("url")
+    # Direkter Produktlink, sonst Suchlink (z.B. bei JP-Karten ohne Preise)
+    info["url"] = card.get("url") or search_url
     info["trend"] = pokeprice.trend_from_prices(card)
-    if avg and min_price and min_price < avg:
-        savings = round((avg - min_price) / avg * 100, 1)
-    else:
-        savings = 0.0
-    # Keine Verkäuferbewertung verfügbar -> Reputation neutral (98 = 0 Punkte)
-    score_info = deal_scorer.compute_score(
-        savings, 98.0, recog.get("condition_estimate") or "NM",
-        info["trend"]["trend"],
-    )
-    info["score"] = score_info["score"]
+    # Deal-Score nur, wenn ein Marktpreis vorliegt (sonst nicht aussagekräftig)
+    if avg and min_price:
+        savings = round((avg - min_price) / avg * 100, 1) if min_price < avg else 0.0
+        # Keine Verkäuferbewertung verfügbar -> Reputation neutral (98 = 0 Punkte)
+        score_info = deal_scorer.compute_score(
+            savings, 98.0, recog.get("condition_estimate") or "NM",
+            info["trend"]["trend"],
+        )
+        info["score"] = score_info["score"]
     return info
 
 
@@ -796,7 +799,11 @@ def _pokeprice_text(name: str, set_name: str | None = None,
     """Preis-Übersicht über pokemontcg.io (Cardmarket-EUR-Preise)."""
     card = pokeprice.lookup(name, set_name, number)
     if not card:
-        return f"💰 *{name}*\n\nKeine Preisdaten gefunden (pokemontcg.io)."
+        return (
+            f"💰 *{name}*\n\nKeine Preisdaten gefunden (oft bei japanischen "
+            "oder sehr neuen Karten).\n"
+            f"🔗 Auf Cardmarket suchen: {pokeprice.cardmarket_search_url(name)}"
+        )
 
     def fmt(v):
         # 0 oder None gilt als "nicht verfügbar"
@@ -824,9 +831,12 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         f"📈 Tendenz: {tr['emoji']} {tr['trend']} ({tr['change_pct']:+.1f}%) | "
         f"💡 {tr['recommendation']}",
     ]
-    cm_url = card.get("url")
-    if cm_url:
-        lines.append(f"🔗 Zum Angebot (Cardmarket DE): {cm_url}")
+    has_prices = any(card.get(k) for k in ("de_low", "low", "avg", "trend"))
+    if not has_prices:
+        lines.append("⚠️ Keine Preisdaten (oft bei JP/sehr neuen Karten) — "
+                     "Preis bitte über den Link prüfen.")
+    cm_url = card.get("url") or pokeprice.cardmarket_search_url(name)
+    lines.append(f"🔗 Zum Angebot (Cardmarket DE): {cm_url}")
     lines += ["", "_Quelle: pokemontcg.io · Preise in EUR (Cardmarket EU-Markt)_"]
     return "\n".join(lines)
 
