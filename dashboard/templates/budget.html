@@ -25,7 +25,7 @@
 <section class="card">
   <h2>Ausgaben nach Monat</h2>
   {% if chart_values %}
-    <canvas id="budgetChart" height="90"></canvas>
+    <div class="chart-box"><canvas id="budgetChart"></canvas></div>
   {% else %}
     <p class="muted">Noch keine Ausgaben erfasst.</p>
   {% endif %}

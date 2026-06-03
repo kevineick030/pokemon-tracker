@@ -40,7 +40,7 @@
 <section class="card">
   <h2>Preisverlauf je Händler</h2>
   {% if price_series %}
-    <canvas id="priceChart" height="90"></canvas>
+    <div class="chart-box"><canvas id="priceChart"></canvas></div>
   {% else %}
     <p class="muted">Noch keine Preisdaten der Händler.</p>
   {% endif %}
@@ -49,7 +49,7 @@
 <section class="card">
   <h2>Cardmarket Sealed-Preis (90 Tage)</h2>
   {% if sealed_values %}
-    <canvas id="sealedChart" height="90"></canvas>
+    <div class="chart-box"><canvas id="sealedChart"></canvas></div>
   {% else %}
     <p class="muted">Noch keine Sealed-Preis-Historie.</p>
   {% endif %}

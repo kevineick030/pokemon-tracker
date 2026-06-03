@@ -182,6 +182,11 @@ a:hover { text-decoration: underline; }
 
 canvas { max-width: 100%; }
 
+/* Chart-Container mit fester Höhe — verhindert das endlose Wachsen von
+   Chart.js-Canvas (maintainAspectRatio:false braucht eine begrenzte Höhe). */
+.chart-box { position: relative; height: 280px; width: 100%; }
+.chart-box canvas { position: absolute; inset: 0; }
+
 /* ---------- Scalp-Grid + Timeline ---------- */
 .grid-scroll { overflow-x: auto; }
 .scalp-grid th.rot { font-size: .78rem; white-space: nowrap; }

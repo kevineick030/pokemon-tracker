@@ -31,7 +31,7 @@
 <section class="card">
   <h2>Wertentwicklung (30 Tage)</h2>
   {% if chart_values %}
-    <canvas id="valueChart" height="90"></canvas>
+    <div class="chart-box"><canvas id="valueChart"></canvas></div>
   {% else %}
     <p class="muted">Noch keine Wertdaten. Die tägliche Bewertung läuft um 02:00 Uhr.</p>
   {% endif %}

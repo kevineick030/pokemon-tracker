@@ -36,7 +36,7 @@
 <section class="card">
   <h2>Wertentwicklung (30 Tage)</h2>
   {% if chart_values %}
-    <canvas id="cardChart" height="90"></canvas>
+    <div class="chart-box"><canvas id="cardChart"></canvas></div>
   {% else %}
     <p class="muted">Noch keine Verlaufsdaten für diese Karte.</p>
   {% endif %}
