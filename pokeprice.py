@@ -81,6 +81,7 @@ def lookup(name: str, set_name: str | None = None,
         "url": cm.get("url"),
         "currency": "EUR",
         "low": prices.get("lowPrice"),
+        "de_low": prices.get("germanProLow"),   # günstigster DE-Profi-Händler
         "avg": prices.get("averageSellPrice") or prices.get("trendPrice"),
         "trend": prices.get("trendPrice"),
         "avg7": prices.get("avg7"),

@@ -769,14 +769,16 @@ def _pokeprice_analysis(recog: dict) -> dict:
         log.info("pokeprice: keine Treffer fuer '%s' (Set '%s', Nr '%s')",
                  query_name, recog.get("set_name"), recog.get("card_number"))
         return info
-    log.info("pokeprice: '%s' -> low=%s avg=%s", query_name,
-             card.get("low"), card.get("avg"))
-    low, avg = card.get("low"), card.get("avg")
-    info["min_price"] = low
+    log.info("pokeprice: '%s' -> de_low=%s low=%s avg=%s", query_name,
+             card.get("de_low"), card.get("low"), card.get("avg"))
+    # DE-Preis bevorzugen (germanProLow), sonst allgemeiner Cardmarket-low
+    min_price = card.get("de_low") or card.get("low")
+    avg = card.get("avg")
+    info["min_price"] = min_price
     info["market_price"] = avg
     info["trend"] = pokeprice.trend_from_prices(card)
-    if avg and low and low < avg:
-        savings = round((avg - low) / avg * 100, 1)
+    if avg and min_price and min_price < avg:
+        savings = round((avg - min_price) / avg * 100, 1)
     else:
         savings = 0.0
     # Keine Verkäuferbewertung verfügbar -> Reputation neutral (98 = 0 Punkte)
@@ -796,7 +798,8 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         return f"💰 *{name}*\n\nKeine Preisdaten gefunden (pokemontcg.io)."
 
     def fmt(v):
-        return f"{v:.2f}€" if isinstance(v, (int, float)) else "–"
+        # 0 oder None gilt als "nicht verfügbar"
+        return f"{v:.2f}€" if isinstance(v, (int, float)) and v > 0 else "–"
 
     tr = pokeprice.trend_from_prices(card)
     lines = [f"💰 *{card['name']}*"]
@@ -809,17 +812,18 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         sub.append(card["rarity"])
     if sub:
         lines.append("📦 " + " · ".join(sub))
+    lines += ["", "💶 *Cardmarket-Preise (EUR):*"]
+    if card.get("de_low"):   # nur zeigen, wenn ein echter DE-Wert vorliegt
+        lines.append(f"🇩🇪 Günstigster DE-Händler: {fmt(card.get('de_low'))}")
     lines += [
-        "",
-        "💶 *Cardmarket-Preise (EUR):*",
-        f"• Günstigst (low): {fmt(card.get('low'))}",
+        f"• Günstigst (Cardmarket): {fmt(card.get('low'))}",
         f"• Durchschnitt: {fmt(card.get('avg'))}",
         f"• Trend: {fmt(card.get('trend'))}",
         "",
         f"📈 Tendenz: {tr['emoji']} {tr['trend']} ({tr['change_pct']:+.1f}%) | "
         f"💡 {tr['recommendation']}",
         "",
-        "_Quelle: pokemontcg.io_",
+        "_Quelle: pokemontcg.io · Preise in EUR (Cardmarket EU-Markt)_",
     ]
     return "\n".join(lines)
 
