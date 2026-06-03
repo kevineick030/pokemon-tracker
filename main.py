@@ -243,9 +243,13 @@ async def _post_shutdown(application: Application) -> None:
 def main() -> None:
     missing = config.validate()
     if missing:
-        log.error("Fehlende Konfiguration in .env: %s", ", ".join(missing))
-        log.error("Bitte .env ausfüllen (Vorlage: .env.example). Abbruch.")
+        log.error("Pflicht-Konfiguration fehlt in .env: %s", ", ".join(missing))
+        log.error("Mindestens TELEGRAM_BOT_TOKEN muss gesetzt sein. Abbruch.")
         return
+
+    # Optionale, nicht gesetzte Funktionen als Warnung anzeigen (kein Abbruch)
+    for warn in config.optional_status():
+        log.warning("[optional] %s", warn)
 
     db.init_db()
 

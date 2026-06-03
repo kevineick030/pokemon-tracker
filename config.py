@@ -158,18 +158,30 @@ def setup_logging() -> logging.Logger:
 
 
 def validate() -> list[str]:
-    """Gibt eine Liste fehlender Pflicht-Konfigurationswerte zurück."""
+    """Gibt fehlende PFLICHT-Werte zurück.
+
+    Nur der Telegram-Bot-Token ist zwingend nötig, damit der Bot überhaupt
+    startet (Schnellstart). Alles andere ist optional und schaltet einzelne
+    Funktionen frei (siehe optional_status()).
+    """
     missing = []
-    required = {
-        "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
-        "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
-        "MKM_APP_TOKEN": MKM_APP_TOKEN,
-        "MKM_APP_SECRET": MKM_APP_SECRET,
-        "MKM_ACCESS_TOKEN": MKM_ACCESS_TOKEN,
-        "MKM_ACCESS_TOKEN_SECRET": MKM_ACCESS_TOKEN_SECRET,
-        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-    }
-    for key, val in required.items():
-        if not val:
-            missing.append(key)
+    if not TELEGRAM_BOT_TOKEN:
+        missing.append("TELEGRAM_BOT_TOKEN")
     return missing
+
+
+def optional_status() -> list[str]:
+    """Warnungen zu optionalen, nicht gesetzten Funktionen (Bot startet trotzdem)."""
+    msgs = []
+    if not TELEGRAM_CHAT_ID:
+        msgs.append("TELEGRAM_CHAT_ID fehlt -> der Bot ist fuer JEDEN nutzbar und "
+                    "es werden keine automatischen Alerts gesendet.")
+    if not all([MKM_APP_TOKEN, MKM_APP_SECRET, MKM_ACCESS_TOKEN,
+                MKM_ACCESS_TOKEN_SECRET]):
+        msgs.append("Cardmarket-Tokens fehlen -> Preisabfragen, Scan, Marktwerte "
+                    "und Sealed-Preise sind deaktiviert.")
+    if not ANTHROPIC_API_KEY:
+        msgs.append("ANTHROPIC_API_KEY fehlt -> der KI-Freitext-Chat ist deaktiviert.")
+    if not GEMINI_API_KEY:
+        msgs.append("GEMINI_API_KEY fehlt -> die Foto-Bilderkennung ist deaktiviert.")
+    return msgs
