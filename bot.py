@@ -24,7 +24,7 @@ import image_recognition
 import scalp_targets
 import profit_calculator
 import release_calendar
-import pokeprice
+import tcgdex as pokeprice   # TCGdex: mehrsprachig (DE!) + echte Cardmarket-Preise
 from cardmarket import (
     CardmarketError, filter_de_offers, market_median, parse_article,
     LANGUAGE_IDS,
@@ -761,8 +761,8 @@ def _pokeprice_analysis(recog: dict) -> dict:
                   "trend": "unbekannt", "recommendation": "egal"},
         "score": None, "best_offer": None, "source": "pokemontcg",
     }
-    # Englischen Namen bevorzugen (pokemontcg.io kennt nur englische Namen)
-    query_name = recog.get("card_name_en") or recog.get("card_name", "")
+    # Deutschen Namen bevorzugen (TCGdex kennt deutsche Namen; en als Fallback)
+    query_name = recog.get("card_name") or recog.get("card_name_en", "")
     # Cardmarket-Suchlink als Fallback (immer verfügbar)
     search_url = pokeprice.cardmarket_search_url(query_name)
     card = pokeprice.lookup(query_name, recog.get("set_name"),
@@ -830,7 +830,7 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         "ℹ️ EU-weite Werte (nicht nach DE-Verkäufern gefiltert).",
         f"🔗 *Günstigste deutsche Angebote:* {cm_url}",
         "",
-        "_Quelle: pokemontcg.io_",
+        "_Quelle: TCGdex · Cardmarket-Preise in EUR_",
     ]
     return "\n".join(lines)
 
@@ -1041,7 +1041,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
         if not config.cardmarket_enabled():
             text = await loop.run_in_executor(
-                None, _pokeprice_text, recog.get("card_name_en") or name,
+                None, _pokeprice_text, recog.get("card_name") or name,
                 recog.get("set_name"), recog.get("card_number"),
             )
         else:
