@@ -1002,15 +1002,30 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
     return head + body + "\n\nWas möchtest du tun?"
 
 
+async def _disable_buttons(query) -> None:
+    """Entfernt die Inline-Buttons, lässt aber den Infotext stehen."""
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verarbeitet die Inline-Buttons nach Bilderkennung bzw. /preis und /add."""
+    """Verarbeitet die Inline-Buttons nach Bilderkennung bzw. /preis und /add.
+
+    Wichtig: Die ursprüngliche Erkennungs-Nachricht bleibt erhalten (mit Infos
+    unter dem Foto). Aktionen werden als NEUE Nachricht darunter gesendet.
+    """
     query = update.callback_query
     await query.answer()
     data = query.data or ""
 
     pending = context.user_data.get("pending_card")
     if not pending:
-        await query.edit_message_text("⌛ Diese Karte ist nicht mehr aktiv.")
+        await query.message.reply_text(
+            "⌛ Diese Karte ist nicht mehr aktiv — schick das Foto bitte neu."
+        )
+        await _disable_buttons(query)
         return
 
     recog = pending["recog"]
@@ -1020,7 +1035,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = analysis.get("product_id")
     is_sealed = image_recognition.is_sealed(recog.get("product_type"))
 
-    # --- 💰 Preis-Check: nur Info, kein dauerhafter Eintrag, Buttons bleiben ---
+    # --- 💰 Preis-Check: Details als NEUE Nachricht, Original + Buttons bleiben ---
     if data == "pc:price":
         import asyncio
         loop = asyncio.get_running_loop()
@@ -1035,10 +1050,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = await loop.run_in_executor(
                 None, _price_check_text, context, product_id, name, card_id
             )
-        keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
-        await query.edit_message_text(
-            text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard,
-            disable_web_page_preview=True,
+        await query.message.reply_text(
+            text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True,
         )
         return
 
@@ -1046,19 +1059,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "pc:watch":
         card = db.get_card_by_name(name)
         if card:
-            card_id = card["id"]
-            await query.edit_message_text(
+            await query.message.reply_text(
                 f"ℹ️ '{name}' ist bereits auf der Watchlist."
             )
         else:
             card_id = db.add_card(name, product_id)
-            await query.edit_message_text(
+            context.user_data["awaiting_alert_threshold"] = card_id
+            await query.message.reply_text(
                 f"🔔 '{name}' zur Watchlist hinzugefügt.\n"
-                f"Bei welcher Ersparnis alarmieren? (Standard: "
+                f"Bei welchem Preis-Rückgang alarmieren? (Standard: "
                 f"{config.DEFAULT_WATCHLIST_ALERT_THRESHOLD:.0f}%)\n"
                 "Antworte mit einer Zahl oder „standard“."
             )
-            context.user_data["awaiting_alert_threshold"] = card_id
+        await _disable_buttons(query)
         _safe_remove(temp_path)
         context.user_data.pop("pending_card", None)
         return
@@ -1066,7 +1079,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- 💼 Scalp-Track: nur für versiegelte Produkte ---
     if data == "pc:scalp":
         if not is_sealed:
-            await query.edit_message_text(
+            await query.message.reply_text(
                 "⚠️ Scalp-Tracking ist nur für versiegelte Produkte verfügbar."
             )
             return
@@ -1092,7 +1105,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 log.warning("Scalp-Foto konnte nicht gespeichert werden.")
         context.user_data["awaiting_scalp_target"] = scalp_id
         context.user_data.pop("pending_card", None)
-        await query.edit_message_text(
+        await _disable_buttons(query)
+        await query.message.reply_text(
             f"💼 '{name}' für Scalp-Tracking vorgemerkt.\n"
             "🎯 Ziel-Einkaufspreis? (€)"
         )
@@ -1125,7 +1139,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_price"] = card_id
         context.user_data.pop("pending_card", None)
-        await query.edit_message_text(
+        await _disable_buttons(query)
+        await query.message.reply_text(
             f"✅ '{name}' in die Sammlung aufgenommen.\n"
             "💶 Wie viel hast du bezahlt? (Zahl in €)"
         )
