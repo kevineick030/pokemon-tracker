@@ -776,6 +776,7 @@ def _pokeprice_analysis(recog: dict) -> dict:
     avg = card.get("avg")
     info["min_price"] = min_price
     info["market_price"] = avg
+    info["url"] = card.get("url")
     info["trend"] = pokeprice.trend_from_prices(card)
     if avg and min_price and min_price < avg:
         savings = round((avg - min_price) / avg * 100, 1)
@@ -822,9 +823,11 @@ def _pokeprice_text(name: str, set_name: str | None = None,
         "",
         f"📈 Tendenz: {tr['emoji']} {tr['trend']} ({tr['change_pct']:+.1f}%) | "
         f"💡 {tr['recommendation']}",
-        "",
-        "_Quelle: pokemontcg.io · Preise in EUR (Cardmarket EU-Markt)_",
     ]
+    cm_url = card.get("url")
+    if cm_url:
+        lines.append(f"🔗 Zum Angebot (Cardmarket DE): {cm_url}")
+    lines += ["", "_Quelle: pokemontcg.io · Preise in EUR (Cardmarket EU-Markt)_"]
     return "\n".join(lines)
 
 
@@ -957,6 +960,10 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
     sealed_line = ""
     if image_recognition.is_sealed(recog.get("product_type")):
         sealed_line = f"📦 Versiegeltes Produkt: {recog.get('product_type')}\n"
+    min_str = f"{min_price:.2f}€" if isinstance(min_price, (int, float)) and min_price > 0 else "–"
+    market_str = f"{market:.2f}€" if isinstance(market, (int, float)) and market > 0 else "–"
+    url = analysis.get("url")
+    link_line = f"\n🔗 Günstigstes Angebot: {url}" if url else ""
     return (
         f"🔍 Erkannt! ({conf}% sicher)\n\n"
         f"🃏 {recog.get('card_name', '?')} | {recog.get('card_number', '?')}\n"
@@ -964,11 +971,11 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
         f"🌍 {recog.get('language', '?')} | Zustand ca.: "
         f"{recog.get('condition_estimate', '?')}\n"
         f"{sealed_line}\n"
-        f"💰 Günstigstes DE-Angebot: "
-        f"{f'{min_price:.2f}€' if min_price is not None else '–'}\n"
-        f"📊 Marktpreis: {f'{market:.2f}€' if market is not None else '–'}\n"
+        f"💰 Günstigster Preis: {min_str}\n"
+        f"📊 Marktpreis (Ø): {market_str}\n"
         f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
-        f"🏆 Deal-Score: {score if score is not None else '–'}/100\n\n"
+        f"🏆 Deal-Score: {score if score is not None else '–'}/100"
+        f"{link_line}\n\n"
         "Was möchtest du tun?"
     )
 

@@ -24,6 +24,27 @@ def _headers() -> dict:
     return h
 
 
+def _resolve_buy_url(url: str | None) -> str | None:
+    """Macht aus der pokemontcg.io-Weiterleitung eine direkte, deutsche
+    Cardmarket-Produkt-URL (ohne Tracking-Parameter)."""
+    if not url:
+        return None
+    target = url
+    if "pokemontcg.io" in url:
+        try:
+            r = requests.get(url, allow_redirects=False, timeout=10,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            loc = r.headers.get("Location")
+            if loc:
+                target = loc
+        except requests.RequestException:
+            return url  # Fallback: Weiterleitungs-Link (funktioniert im Browser)
+    target = target.split("?")[0].replace("/en/", "/de/")
+    if target.startswith("https://cardmarket.com"):
+        target = target.replace("https://cardmarket.com", "https://www.cardmarket.com")
+    return target
+
+
 def _score_candidate(card: dict, number: str | None, set_name: str | None) -> int:
     """Bewertet, wie gut ein Treffer zu Nummer/Set passt (höher = besser)."""
     score = 0
@@ -78,7 +99,7 @@ def lookup(name: str, set_name: str | None = None,
         "number": best.get("number"),
         "rarity": best.get("rarity"),
         "image": best.get("images", {}).get("small"),
-        "url": cm.get("url"),
+        "url": _resolve_buy_url(cm.get("url")),
         "currency": "EUR",
         "low": prices.get("lowPrice"),
         "de_low": prices.get("germanProLow"),   # günstigster DE-Profi-Händler
