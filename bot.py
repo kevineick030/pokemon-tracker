@@ -238,6 +238,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Startet den Bot-Dienst neu (nur für autorisierten Chat)."""
+    if not _authorized(update):
+        return
+    import asyncio, subprocess
+    await update.message.reply_text("🔄 Bot wird neu gestartet … bin gleich wieder da!")
+    await asyncio.sleep(1)          # Nachricht noch senden bevor Prozess stirbt
+    subprocess.Popen(["systemctl", "restart", "pokemon-tracker"])
+
+
 async def cmd_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         return
@@ -1363,6 +1373,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("remove", cmd_remove))
     application.add_handler(CommandHandler("preis", cmd_preis))
     application.add_handler(CommandHandler("status", cmd_status))
+    application.add_handler(CommandHandler("restart", cmd_restart))
     application.add_handler(CommandHandler("threshold", cmd_threshold))
     application.add_handler(CommandHandler("score", cmd_score))
     application.add_handler(CommandHandler("scan", cmd_scan))
