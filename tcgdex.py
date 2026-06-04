@@ -221,6 +221,7 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
         "image": d.get("image"),
         "url": link,
         "currency": cm.get("unit", "EUR"),
+        "idProduct": cm.get("idProduct"),   # Cardmarket-Produkt-ID fuer direkten Lookup
         "low": cm.get("low"),
         "de_low": None,             # TCGdex hat keinen DE-Verkäufer-Preis
         "avg": cm.get("avg"),

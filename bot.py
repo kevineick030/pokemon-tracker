@@ -24,7 +24,8 @@ import image_recognition
 import scalp_targets
 import profit_calculator
 import release_calendar
-import tcgdex as pokeprice   # TCGdex: mehrsprachig (DE!) + echte Cardmarket-Preise
+import tcgdex as pokeprice   # TCGdex: Name→idProduct-Mapper + Fallback-Preise
+import cm_priceguide          # Lokaler Cardmarket Price Guide (taeglich, ~75k Produkte)
 from cardmarket import (
     CardmarketError, filter_de_offers, market_median, parse_article,
     LANGUAGE_IDS,
@@ -772,7 +773,13 @@ def _best_lookup(names: list, set_name=None, number=None, rarity=None):
 
 
 def _pokeprice_analysis(recog: dict) -> dict:
-    """Marktpreis über TCGdex (wenn kein Cardmarket)."""
+    """Marktpreis-Analyse: erst lokaler CM Price Guide, dann TCGdex als Fallback.
+
+    Lookup-Kette:
+      1. TCGdex → idProduct ermitteln (Name/Set/Nummer/Seltenheit)
+      2. idProduct → lokaler Cardmarket Price Guide (tagesaktuell, kein API-Limit)
+      3. Fallback: TCGdex-Preise direkt (EU-weit, wenn kein lokaler Eintrag)
+    """
     info = {
         "product_id": None, "min_price": None, "market_price": None,
         "trend": {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
@@ -790,16 +797,36 @@ def _pokeprice_analysis(recog: dict) -> dict:
                  names, recog.get("set_name"), recog.get("card_number"))
         info["url"] = search_url
         return info
-    log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", card.get("name"),
+
+    product_id = card.get("idProduct")
+    info["product_id"] = product_id
+    info["url"] = card.get("url") or search_url
+
+    # 1) Lokaler CM Price Guide (bevorzugt: tagesaktuell, 75k Produkte)
+    cm = cm_priceguide.get_price(product_id) if product_id else None
+    if cm and (cm.get("low") or cm.get("trend")):
+        log.info("CM-Local '%s' (id=%s): low=%s trend=%s avg7=%s",
+                 card.get("name"), product_id,
+                 cm.get("low"), cm.get("trend"), cm.get("avg7"))
+        info["market_price"] = cm.get("trend") or cm.get("avg")
+        info["min_price"] = cm.get("low")
+        info["avg7"] = cm.get("avg7")
+        info["avg30"] = cm.get("avg30")
+        info["source"] = "cardmarket_local"
+        # Trend aus CM avg7 vs avg30 berechnen (gleiche Logik wie TCGdex)
+        info["trend"] = pokeprice.trend_from_prices({
+            "avg7": cm.get("avg7"), "avg30": cm.get("avg30"),
+        })
+        return info
+
+    # 2) Fallback: TCGdex EU-Preise (wenn kein CM-Eintrag)
+    log.info("TCGdex-Fallback '%s' (id=%s): trend=%s avg7=%s avg30=%s low=%s",
+             card.get("name"), product_id,
              card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
-    # Marktwert = Cardmarket-Trend (entspricht der auf Cardmarket angezeigten
-    # Bewertung). WICHTIG: EU-weit, NICHT nach DE-Verkäufern gefiltert.
     info["market_price"] = card.get("trend") or card.get("avg")
     info["avg7"] = card.get("avg7")
-    info["min_price"] = card.get("low")   # EU-weiter Tiefstwert (nur Referenz)
-    info["url"] = card.get("url") or search_url
+    info["min_price"] = card.get("low")
     info["trend"] = pokeprice.trend_from_prices(card)
-    # Kein Deal-Score: ohne echte DE-Einzelangebote nicht aussagekräftig.
     return info
 
 
@@ -997,23 +1024,33 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
         f"{sealed_line}\n"
     )
 
-    if is_free:
-        # Freie Quelle: EU-weite Cardmarket-Werte (keine DE-Filterung möglich)
-        body = f"💶 Cardmarket-Wert (ca., EU-weit): {fmt(market)}\n"
+    source = analysis.get("source", "pokemontcg")
+    if source == "cardmarket_local":
+        # Lokaler Cardmarket Price Guide: tagesaktuell, direktes Produkt
+        body = f"💶 Ab: {fmt(analysis.get('min_price'))}  (guenstigstes Angebot)\n"
+        body += f"📊 Trend: {fmt(market)}\n"
         if analysis.get("avg7"):
-            body += f"📊 Ø 7 Tage: {fmt(analysis.get('avg7'))}\n"
+            body += f"📈 O 7 Tage: {fmt(analysis.get('avg7'))}\n"
+        body += f"{'Steigend' if trend['trend'] == 'steigend' else 'Trend'}: {trend['emoji']} {trend['trend']}\n"
+        if url:
+            body += f"🔗 Auf Cardmarket: {url}"
+    elif source == "pokemontcg":
+        # TCGdex Fallback: EU-weite Aggregate
+        body = f"💶 Cardmarket (ca.): {fmt(market)}\n"
+        if analysis.get("avg7"):
+            body += f"📊 O 7 Tage: {fmt(analysis.get('avg7'))}\n"
         body += f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
         if url:
-            body += f"🔗 Auf Cardmarket öffnen (DE): {url}\n"
-        body += "ℹ️ Werte sind EU-weit. Deutsche Verkäufer/Angebote siehst du über den Link."
+            body += f"🔗 Auf Cardmarket: {url}\n"
+        body += "i Preise EU-weit (kein DE-Filter). Link zeigt alle Angebote."
     else:
         # Cardmarket-API: echte DE-Angebote + Verkäuferbewertung
         score = analysis.get("score")
         body = (
-            f"💰 Günstigstes DE-Angebot: {fmt(analysis.get('min_price'))}\n"
-            f"📊 Marktpreis: {fmt(market)}\n"
-            f"📈 Trend: {trend['emoji']} {trend['trend']}\n"
-            f"🏆 Deal-Score: {score if score is not None else '–'}/100"
+            f"Guenstigstes DE-Angebot: {fmt(analysis.get('min_price'))}\n"
+            f"Marktpreis: {fmt(market)}\n"
+            f"Trend: {trend['emoji']} {trend['trend']}\n"
+            f"Deal-Score: {score if score is not None else '-'}/100"
         )
         if url:
             body += f"\n🔗 {url}"

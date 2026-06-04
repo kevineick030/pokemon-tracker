@@ -13,15 +13,18 @@ import logging
 
 import database as db
 import tcgdex
+import cm_priceguide
 
 log = logging.getLogger(__name__)
 
 
 def fetch_market_value(card) -> float | None:
-    """Aktueller Marktpreis einer Sammlungskarte über TCGdex.
+    """Aktueller Marktpreis einer Sammlungskarte.
 
-    Sucht über Name + Set + Nummer + Seltenheit (wie der Foto-Scan) und nimmt
-    den Cardmarket-Trend, ersatzweise den Durchschnitt (avg).
+    Lookup-Kette (gleich wie bot._pokeprice_analysis):
+      1. TCGdex → idProduct ermitteln
+      2. idProduct → lokaler CM Price Guide (Trend-Preis)
+      3. Fallback: TCGdex EU-Trend direkt
     """
     name = card["card_name"]
     if not name:
@@ -34,6 +37,16 @@ def fetch_market_value(card) -> float | None:
     )
     if not result:
         return None
+
+    # 1) Lokaler CM Price Guide via idProduct (bevorzugt)
+    product_id = result.get("idProduct")
+    if product_id:
+        cm = cm_priceguide.get_price(product_id)
+        if cm and (cm.get("trend") or cm.get("avg")):
+            value = cm.get("trend") or cm.get("avg")
+            return float(value)
+
+    # 2) Fallback: TCGdex EU-Preis
     value = result.get("trend") or result.get("avg")
     return float(value) if value is not None else None
 

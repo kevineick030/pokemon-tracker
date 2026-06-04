@@ -21,6 +21,7 @@ import database as db
 import bot
 import portfolio
 import briefing
+import cm_priceguide
 import sealed_prices
 import release_calendar
 import restock_alerts
@@ -52,6 +53,16 @@ async def job_briefing(application: Application) -> None:
         )
     except Exception:
         log.exception("Briefing-Job fehlgeschlagen")
+
+
+async def job_priceguide(application: Application) -> None:
+    log.info("Scheduler: Cardmarket Price Guide Download.")
+    loop = asyncio.get_running_loop()
+    try:
+        count = await loop.run_in_executor(None, cm_priceguide.download_and_import)
+        log.info("Price Guide: %d Produkte importiert.", count)
+    except Exception:
+        log.exception("Price-Guide-Job fehlgeschlagen")
 
 
 async def job_portfolio_valuation(application: Application) -> None:
@@ -176,7 +187,13 @@ def setup_scheduler(application: Application) -> AsyncIOScheduler:
     )
     scheduler.add_job(
         job_briefing, CronTrigger(hour=config.BRIEFING_HOUR, minute=0),
-        args=[application], id="briefing", name="Tägliches Briefing",
+        args=[application], id="briefing", name="Taegliches Briefing",
+    )
+    scheduler.add_job(
+        job_priceguide,
+        CronTrigger(hour=config.CM_PRICE_GUIDE_DOWNLOAD_HOUR, minute=0),
+        args=[application], id="priceguide", name="CM Price Guide Download",
+        max_instances=1, coalesce=True,
     )
     scheduler.add_job(
         job_portfolio_valuation,

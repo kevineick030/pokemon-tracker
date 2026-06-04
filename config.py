@@ -44,6 +44,15 @@ MAX_IMAGES_PER_HOUR = 20              # Rate-Limit Bilderkennung
 POKEMONTCG_API_KEY = os.getenv("POKEMONTCG_API_KEY", "")
 POKEMONTCG_BASE_URL = "https://api.pokemontcg.io/v2"
 
+# --- Cardmarket Price Guide (taeglich, kein API-Key noetig) ---
+# Oeffentlicher S3-Link (Cardmarket ersetzt die deprecated API dadurch).
+# Enthaelt ~75k Pokemon-Produkte mit low/trend/avg/avg7/avg30 (EUR).
+CM_PRICE_GUIDE_URL = os.getenv(
+    "CM_PRICE_GUIDE_URL",
+    "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json",
+)
+CM_PRICE_GUIDE_DOWNLOAD_HOUR = 6   # 06:00 taeglich (Cardmarket aktualisiert morgens)
+
 # --- Datenbank ---
 DB_PATH = str(BASE_DIR / "pokemon_tracker.db")
 

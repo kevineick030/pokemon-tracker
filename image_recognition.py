@@ -15,12 +15,13 @@ PROMPT = (
     "Analysiere dieses Pokémon-Bild (Einzelkarte ODER versiegeltes Produkt). "
     "Gib NUR JSON zurück:\n"
     "{\n"
-    '  "card_name": "exakter Name wie auf der Karte (z.B. deutsch)",\n'
-    '  "card_name_en": "offizieller ENGLISCHER Name (z.B. Glurak->Charizard), wichtig fuer Preissuche",\n'
-    '  "set_name": "Set-Name",\n'
+    '  "card_name": "exakter Name wie auf der Karte (deutsch, englisch oder japanisch)",\n'
+    '  "card_name_en": "PFLICHT: offizieller englischer Name, IMMER ausfuellen - auch bei JP-Karten! '
+    '(Glurak->Charizard, Glurak-ex->Charizard ex, フリーザー->Articuno). Niemals leer lassen.",\n'
+    '  "set_name": "Set-Name (englisch bevorzugt, z.B. Obsidian Flames statt Obsidianflammen)",\n'
     '  "card_number": "z.B. 201/165 (leer bei versiegelten Produkten)",\n'
-    '  "rarity": "Special Illustration Rare / Illustration Rare / Ultra Rare / andere",\n'
-    '  "language": "DE / EN / JP",\n'
+    '  "rarity": "Special Illustration Rare / Illustration Rare / Ultra Rare / Double Rare / andere",\n'
+    '  "language": "DE / EN / JP / KO / other",\n'
     '  "condition_estimate": "NM / EX / GD",\n'
     '  "product_type": "single_card / display / etb / bundle / collection / tin / box / other",\n'
     '  "confidence": 0.0-1.0\n'
@@ -29,13 +30,17 @@ PROMPT = (
     "'tin' = Metalldose, 'box' = sonstige Box, 'bundle' = Booster-Bundle, "
     "'collection' = Collection/Premium-Box, 'single_card' = einzelne Karte.\n"
     "WICHTIG fuer die Zuordnung — sehr sorgfaeltig lesen:\n"
+    "- card_name_en: Bei japanischen Karten ist der englische Name IMMER bekannt "
+    "(alle JP-Pokemon haben offizielle EN-Namen). Aus dem Artwork/Typ ableiten, "
+    "nicht leer lassen. Beispiele: フシギダネ->Bulbasaur, ピカチュウ->Pikachu, "
+    "リザードンex->Charizard ex.\n"
     "- card_number: die Sammler-Nummer steht meist UNTEN (z.B. '121/165', "
     "'201/091', 'TG12/TG30'). Genau abtippen, nicht raten.\n"
-    "- set_name: am Set-Symbol/Logo erkennen; wenn unsicher, set_name leer lassen "
-    "statt zu raten.\n"
+    "- set_name: am Set-Symbol/Logo erkennen; englischen Set-Namen bevorzugen "
+    "fuer bessere Datenbanksuche; wenn unsicher, leer lassen statt zu raten.\n"
     "- rarity: anhand des Stils bestimmen (Special Illustration Rare = volles "
     "Artwork ueber die ganze Karte; Illustration Rare = Artwork-Hintergrund; "
-    "Ultra Rare = glaenzend/Full-Art ex; Double Rare = normales ex). Die Seltenheit "
+    "Ultra Rare = glaenzend/Full-Art ex; Double Rare = normales ex). Seltenheit "
     "ist wichtig fuer den Wert — lieber genau hinsehen.\n"
     "Bei Fehler: {\"error\": \"nicht erkennbar\"}"
 )

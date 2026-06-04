@@ -165,6 +165,25 @@ CREATE TABLE IF NOT EXISTS pokemon_releases (
     notes               TEXT
 );
 
+-- Taeglich aktualisierter Cardmarket Price Guide (kein API-Key noetig).
+-- Befuellt von cm_priceguide.download_and_import() um 06:00 Uhr.
+CREATE TABLE IF NOT EXISTS cm_price_guide (
+    id_product  INTEGER PRIMARY KEY,
+    avg         REAL,
+    low         REAL,
+    trend       REAL,
+    avg1        REAL,
+    avg7        REAL,
+    avg30       REAL,
+    avg_holo    REAL,
+    low_holo    REAL,
+    trend_holo  REAL,
+    avg1_holo   REAL,
+    avg7_holo   REAL,
+    avg30_holo  REAL,
+    updated_at  TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_price_history_card ON price_history(card_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_alerts_card ON alerts_sent(card_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_pvh_card ON portfolio_value_history(portfolio_card_id, timestamp);
@@ -793,6 +812,44 @@ def get_total_spent(days: int | None = None) -> float:
                 (cutoff,),
             ).fetchone()
     return row["total"]
+
+
+# ----------------------------------------------------------------------------
+# Cardmarket Price Guide (taeglich heruntergeladen, lokal gecacht)
+# ----------------------------------------------------------------------------
+def import_cm_price_guide(rows: list[tuple]) -> None:
+    """Schreibt alle Price-Guide-Eintraege in die DB (INSERT OR REPLACE).
+
+    rows: Liste von Tupeln in der Reihenfolge:
+    (id_product, avg, low, trend, avg1, avg7, avg30,
+     avg_holo, low_holo, trend_holo, avg1_holo, avg7_holo, avg30_holo, updated_at)
+    """
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO cm_price_guide "
+            "(id_product, avg, low, trend, avg1, avg7, avg30, "
+            " avg_holo, low_holo, trend_holo, avg1_holo, avg7_holo, avg30_holo, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+
+
+def get_cm_price(product_id: int):
+    """Preis fuer eine Cardmarket-Produkt-ID aus dem lokalen Price Guide."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM cm_price_guide WHERE id_product = ?",
+            (product_id,),
+        ).fetchone()
+
+
+def cm_price_guide_count() -> int:
+    """Anzahl Eintraege im lokalen Price Guide (0 = noch nicht heruntergeladen)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM cm_price_guide"
+        ).fetchone()
+    return row["c"] if row else 0
 
 
 # ----------------------------------------------------------------------------
