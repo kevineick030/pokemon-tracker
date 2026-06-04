@@ -28,6 +28,15 @@ PROMPT = (
     "product_type-Hinweise: 'display' = 36er-Booster-Display, 'etb' = Elite Trainer Box, "
     "'tin' = Metalldose, 'box' = sonstige Box, 'bundle' = Booster-Bundle, "
     "'collection' = Collection/Premium-Box, 'single_card' = einzelne Karte.\n"
+    "WICHTIG fuer die Zuordnung — sehr sorgfaeltig lesen:\n"
+    "- card_number: die Sammler-Nummer steht meist UNTEN (z.B. '121/165', "
+    "'201/091', 'TG12/TG30'). Genau abtippen, nicht raten.\n"
+    "- set_name: am Set-Symbol/Logo erkennen; wenn unsicher, set_name leer lassen "
+    "statt zu raten.\n"
+    "- rarity: anhand des Stils bestimmen (Special Illustration Rare = volles "
+    "Artwork ueber die ganze Karte; Illustration Rare = Artwork-Hintergrund; "
+    "Ultra Rare = glaenzend/Full-Art ex; Double Rare = normales ex). Die Seltenheit "
+    "ist wichtig fuer den Wert — lieber genau hinsehen.\n"
     "Bei Fehler: {\"error\": \"nicht erkennbar\"}"
 )
 

@@ -70,6 +70,57 @@ def cardmarket_search_url(name: str) -> str:
     return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}"
 
 
+def _cardmarket_product_url(id_product) -> str | None:
+    """Offizieller Cardmarket-Redirect zur EXAKTEN Produktseite über die ID.
+    Format: cardmarket.com/{Spiel}/Products?idProduct={ID} (NICHT .../Singles?...)."""
+    if not id_product:
+        return None
+    return f"https://www.cardmarket.com/de/Pokemon/Products?idProduct={id_product}"
+
+
+# Set-Cache (einmal pro Sprache laden) für den direkten Set+Nummer-Pfad
+_sets_cache: dict[str, list] = {}
+
+
+def _get_sets(lang: str) -> list:
+    if lang not in _sets_cache:
+        try:
+            r = requests.get(f"{BASE}/{lang}/sets", timeout=15)
+            r.raise_for_status()
+            _sets_cache[lang] = r.json() if isinstance(r.json(), list) else []
+        except (requests.RequestException, ValueError):
+            _sets_cache[lang] = []
+    return _sets_cache[lang]
+
+
+def _resolve_set_id(lang: str, set_name: str | None) -> str | None:
+    """Findet die TCGdex-Set-ID zu einem (evtl. ungenauen) Set-Namen."""
+    if not set_name:
+        return None
+    best, best_score = None, 0
+    target = set_name.lower()
+    twords = set(target.split())
+    for s in _get_sets(lang):
+        nm = (s.get("name") or "").lower()
+        if not nm:
+            continue
+        if nm == target:
+            return s.get("id")
+        score = 0
+        if nm in target or target in nm:
+            score += 3
+        score += len(twords & set(nm.split()))
+        if score > best_score:
+            best, best_score = s.get("id"), score
+    return best if best_score >= 2 else None
+
+
+def _name_base(name: str) -> str:
+    """Basis-Pokémonname ohne Suffix (für Plausibilitätscheck)."""
+    return re.sub(r"[\s-]+(ex|EX|GX|V|VMAX|VSTAR)\b.*$", "",
+                  (name or "")).strip().lower()
+
+
 def _search(lang: str, name: str) -> list:
     try:
         r = requests.get(f"{BASE}/{lang}/cards",
@@ -102,8 +153,9 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
         return None
     num = number.split("/")[0].strip() if number else None
     want_tier = _rarity_tier(rarity)
+    base = _name_base(name)
 
-    # Kandidaten holen: deutsche, dann englische Namens-Varianten
+    # 1) Kandidaten über Namens-Varianten (deutsch, dann englisch)
     candidates, lang = [], "de"
     for candidate_lang in ("de", "en"):
         for variant in _name_variants(name):
@@ -113,21 +165,31 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
                 break
         if candidates:
             break
-    if not candidates:
-        return None
-
-    # Zu viele? Erst per Nummer eingrenzen, sonst auf die ersten begrenzen
     if len(candidates) > 12 and num:
         narrowed = [c for c in candidates
                     if str(c.get("localId", "")).lstrip("0") == num.lstrip("0")]
         if narrowed:
             candidates = narrowed
-    candidates = candidates[:12]
+    details = [(_detail(lang, c["id"]) or c) for c in candidates[:12]]
 
-    # Details laden + bewerten
+    # 2) Direkter Set+Nummer-Pfad: exakte Karte holen (de+en), falls Name plausibel
+    if num:
+        for l in ("de", "en"):
+            set_id = _resolve_set_id(l, set_name)
+            if not set_id:
+                continue
+            for n in (num, num.zfill(3)):
+                dd = _detail(l, f"{set_id}-{n}")
+                if dd and dd.get("name") and (not base or base in dd["name"].lower()):
+                    details.append(dd)
+                    break
+
+    if not details:
+        return None
+
+    # 3) Bewerten: Seltenheit (+4), Nummer (+3), Set (+2), hat-Preis (+1)
     best_d, best_score = None, -1
-    for c in candidates:
-        d = _detail(lang, c["id"]) or c
+    for d in details:
         cm = (d.get("pricing") or {}).get("cardmarket") or {}
         score = 0.0
         if num and str(d.get("localId", "")).lstrip("0") == num.lstrip("0"):
@@ -145,10 +207,10 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
     cm = (d.get("pricing") or {}).get("cardmarket") or {}
     set_obj = d.get("set") or {}
 
-    # Cardmarket-Suchlink mit dem (deutschen) Kartennamen — die idProduct-URL
-    # funktioniert bei Cardmarket NICHT (landet auf leerer Seite). Die
-    # Namenssuche füllt das Suchfeld und zeigt die richtige Karten-Familie.
-    link = cardmarket_search_url(d.get("name") or name)
+    # Exakter Cardmarket-Link über die Produkt-ID (offizieller Redirect),
+    # sonst Namenssuche als Fallback (z.B. JP-Karten ohne Cardmarket-Produkt).
+    link = (_cardmarket_product_url(cm.get("idProduct"))
+            or cardmarket_search_url(d.get("name") or name))
 
     return {
         "id": d.get("id"),
