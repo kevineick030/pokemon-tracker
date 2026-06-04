@@ -4,7 +4,7 @@
 > wie es betrieben/bedient wird und was noch offen ist. Bitte bei größeren
 > Änderungen aktuell halten.
 
-**Letzter Stand:** 2026-06-03 · Sprache mit dem User: **Deutsch** (Einsteiger,
+**Letzter Stand:** 2026-06-04 · Sprache mit dem User: **Deutsch** (Einsteiger,
 nicht-technisch → einfache Schritt-für-Schritt-Erklärungen).
 
 ---
@@ -28,7 +28,8 @@ die Sammlung/Watchlist legen.** Fokus: **deutsche Karten, deutsche Preise.**
   entfernt, Aktion kommt als neue Nachricht).
 - **`/preis <name>`** (TCGdex-Preise), **KI-Chat** (Claude Haiku, Freitext).
 - **Sammlung:** Foto → „Sammlung" → Kaufpreis abfragen → Eintrag. `/sammlung`,
-  `/wert`, `/gekauft`.
+  `/wert`, `/gekauft`. **Tägliche Neubewertung (02:00) läuft über TCGdex** →
+  `/wert` + Dashboard-Chart bewegen sich (siehe `portfolio.update_all_values`).
 - **Budget** (`/budget`, `/ausgabe`), **Watchlist** (`/add`, `/watchlist`),
   **Releases** (`/releases`, `/release_add`).
 - **Web-Dashboard** (Sammlung-Galerie, Wert, Watchlist, Budget, Scalp, Releases).
@@ -38,8 +39,6 @@ die Sammlung/Watchlist legen.** Fokus: **deutsche Karten, deutsche Preise.**
   Verkäufern gefiltert. Werte sind frisch + für die richtige Karte, aber die
   Anzeige „nur DE-Verkäufer ab X €" kann nur die Cardmarket-API. Der **Link**
   führt aber zu den echten DE-Angeboten.
-- **`/wert` / Sammlungswert ist statisch** — die tägliche Neubewertung (02:00)
-  nutzt noch Cardmarket → tut nichts. TODO: auf TCGdex umstellen.
 - **Versiegelte Produkte** (Displays/ETBs) haben **keine Preise** (TCGdex hat nur
   Einzelkarten) → Profit-Rechner/Scalp-Profit ohne Daten.
 - Dashboard läuft nur über **HTTP** (Passwort, aber unverschlüsselt).
@@ -127,7 +126,7 @@ tcgdex.py          AKTUELLE Preis-Quelle (in bot.py als `pokeprice` aliasiert!)
 pokeprice.py       ALTE Quelle (pokemontcg.io) — nicht mehr genutzt, bleibt liegen
 cardmarket.py      Cardmarket-API (nur aktiv, wenn Tokens gesetzt)
 scanner.py         Watchlist-Scan (Cardmarket → derzeit tot, TODO: TCGdex)
-portfolio.py       Sammlungswert (Cardmarket → tägl. Job tot, TODO: TCGdex)
+portfolio.py       Sammlungswert über TCGdex (tägl. Job läuft, 02:00)
 profit_calculator.py / sealed_prices.py / scalp_targets.py /
 retail_monitor.py / hotstock_monitor.py / restock_alerts.py /
 release_calendar.py   → Scalping-Modul (teils nicht funktional, siehe oben)
@@ -156,15 +155,16 @@ retailers_config.json  Händler-CSS-Selektoren (Platzhalter, ungetestet)
 Vom User priorisiert (zuletzt gewählt):
 1. **Kauf-Berater (Deal-Check):** beim Foto Kaufpreis eingeben → „Markt X €, du
    zahlst Y € → -Z % → KAUFEN/SKIP". Echtzeit-Einkaufsberater.
-2. **Sammlung lebt:** Sammlungswert täglich über TCGdex aktualisieren → `/wert`
-   + Dashboard-Chart bewegen sich; toten Cardmarket-Bewertungs-Job ersetzen.
+2. ✅ **Sammlung lebt (ERLEDIGT 2026-06-04):** Sammlungswert wird täglich (02:00)
+   über TCGdex aktualisiert → `/wert` + Dashboard-Chart bewegen sich. Toter
+   Cardmarket-Bewertungs-Job ersetzt (`portfolio.update_all_values`).
 3. **Sammlung-Extras:** Doppelte-Warnung beim Scannen, Set-Fortschritt
    (`8/18 SIR`), CSV/Excel-Export, Quick-Sell-Schätzung nach Gebühren.
 
 Weitere offene Punkte:
 - Watchlist-Scanner auf TCGdex umstellen (Preis-Drop-Alerts) — ersetzt toten
   Cardmarket-Scan.
-- Tote/sinnlose Scheduler-Jobs aufräumen (Scalping, Cardmarket-Scan, Bewertung).
+- Tote/sinnlose Scheduler-Jobs aufräumen (Scalping, Cardmarket-Scan).
 - Für echte **DE-Verkäufer-Filterung**: Cardmarket-API beantragen (kostenpflichtig
   + Freischaltung; Code schaltet automatisch um).
 - Dashboard optional auf **HTTPS** (über vorhandenen nginx + Domain + certbot).
