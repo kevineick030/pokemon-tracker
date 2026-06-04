@@ -792,8 +792,6 @@ def _pokeprice_analysis(recog: dict) -> dict:
         return info
     log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", card.get("name"),
              card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
-    log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", query_name,
-             card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
     # Marktwert = Cardmarket-Trend (entspricht der auf Cardmarket angezeigten
     # Bewertung). WICHTIG: EU-weit, NICHT nach DE-Verkäufern gefiltert.
     info["market_price"] = card.get("trend") or card.get("avg")
