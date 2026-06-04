@@ -141,77 +141,12 @@ def _detail(lang: str, card_id: str) -> dict:
         return {}
 
 
-def lookup(name: str, set_name: str | None = None, number: str | None = None,
-           rarity: str | None = None) -> dict | None:
-    """Robuste Karten-Suche → normalisierte Preis-/Stammdaten.
-
-    Nutzt Namens-Varianten (Leerzeichen/Bindestrich) und bewertet Kandidaten
-    nach **Seltenheit** (wichtig für den Wert!), Nummer und Set — damit auch
-    bei verlesenem Set/Nummer die richtige Karte gefunden wird.
-    """
-    if not name:
-        return None
-    num = number.split("/")[0].strip() if number else None
-    want_tier = _rarity_tier(rarity)
-    base = _name_base(name)
-
-    # 1) Kandidaten über Namens-Varianten (deutsch, dann englisch)
-    candidates, lang = [], "de"
-    for candidate_lang in ("de", "en"):
-        for variant in _name_variants(name):
-            res = _search(candidate_lang, variant)
-            if res:
-                candidates, lang = res, candidate_lang
-                break
-        if candidates:
-            break
-    if len(candidates) > 12 and num:
-        narrowed = [c for c in candidates
-                    if str(c.get("localId", "")).lstrip("0") == num.lstrip("0")]
-        if narrowed:
-            candidates = narrowed
-    details = [(_detail(lang, c["id"]) or c) for c in candidates[:12]]
-
-    # 2) Direkter Set+Nummer-Pfad: exakte Karte holen (de+en), falls Name plausibel
-    if num:
-        for l in ("de", "en"):
-            set_id = _resolve_set_id(l, set_name)
-            if not set_id:
-                continue
-            for n in (num, num.zfill(3)):
-                dd = _detail(l, f"{set_id}-{n}")
-                if dd and dd.get("name") and (not base or base in dd["name"].lower()):
-                    details.append(dd)
-                    break
-
-    if not details:
-        return None
-
-    # 3) Bewerten: Seltenheit (+4), Nummer (+3), Set (+2), hat-Preis (+1)
-    best_d, best_score = None, -1
-    for d in details:
-        cm = (d.get("pricing") or {}).get("cardmarket") or {}
-        score = 0.0
-        if num and str(d.get("localId", "")).lstrip("0") == num.lstrip("0"):
-            score += 3
-        if _set_match(set_name, (d.get("set") or {}).get("name")):
-            score += 2
-        if want_tier != "other" and _rarity_tier(d.get("rarity")) == want_tier:
-            score += 4
-        if cm.get("trend") or cm.get("avg"):
-            score += 1
-        if score > best_score:
-            best_d, best_score = d, score
-
-    d = best_d or {}
+def _build_result(d: dict, name: str) -> dict:
+    """Baut das normierte Rückgabe-Dict aus einem TCGdex-Karten-Detail."""
     cm = (d.get("pricing") or {}).get("cardmarket") or {}
     set_obj = d.get("set") or {}
-
-    # Exakter Cardmarket-Link über die Produkt-ID (offizieller Redirect),
-    # sonst Namenssuche als Fallback (z.B. JP-Karten ohne Cardmarket-Produkt).
     link = (_cardmarket_product_url(cm.get("idProduct"))
             or cardmarket_search_url(d.get("name") or name))
-
     return {
         "id": d.get("id"),
         "name": d.get("name"),
@@ -221,14 +156,118 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
         "image": d.get("image"),
         "url": link,
         "currency": cm.get("unit", "EUR"),
-        "idProduct": cm.get("idProduct"),   # Cardmarket-Produkt-ID fuer direkten Lookup
+        "idProduct": cm.get("idProduct"),
         "low": cm.get("low"),
-        "de_low": None,             # TCGdex hat keinen DE-Verkäufer-Preis
+        "de_low": None,
         "avg": cm.get("avg"),
         "trend": cm.get("trend"),
         "avg7": cm.get("avg7"),
         "avg30": cm.get("avg30"),
     }
+
+
+def lookup(name: str, set_name: str | None = None, number: str | None = None,
+           rarity: str | None = None) -> dict | None:
+    """Karten-Suche → normalisierte Preis-/Stammdaten.
+
+    Zwei-Pfad-Strategie:
+
+    PFAD 1 (bevorzugt): Direktsuche Set + Nummer
+      Wenn Gemini Set-Name UND Kartennummer erkannt hat, wird der exakte
+      TCGdex-Endpunkt /{lang}/cards/{set_id}-{num} abgefragt. Das ist immer
+      korrekt — Nummer luegt nicht. Plausibilitaetscheck: Basis-Pokémon-Name
+      muss im Ergebnis enthalten sein (verhindert komplett falsche Sets).
+
+    PFAD 2 (Fallback): Namenssuche mit strikter Nummer-Filterung
+      Wenn Pfad 1 scheitert (Set nicht aufloesbar, Nummer fehlt).
+      Kandidaten werden nach Nummernuebereinstimmung gefiltert. Im Scoring
+      dominiert die Nummer (+10 Bonus / -20 Strafe) ueber Seltenheit (+4).
+      Hat kein Kandidat die richtige Nummer, wird None zurueckgegeben statt
+      einer falschen Karte (lieber kein Preis als falscher Preis).
+    """
+    if not name:
+        return None
+    num = number.split("/")[0].strip() if number else None
+    want_tier = _rarity_tier(rarity)
+    base = _name_base(name)
+
+    # ── PFAD 1: Direkte Set+Nummer-Suche ─────────────────────────────────────
+    if num and set_name:
+        for lang in ("de", "en"):
+            set_id = _resolve_set_id(lang, set_name)
+            if not set_id:
+                continue
+            for n in (num, num.zfill(3)):
+                dd = _detail(lang, f"{set_id}-{n}")
+                if not dd or not dd.get("name"):
+                    continue
+                # Plausibilitaetscheck: Basis-Pokémon-Name muss stimmen
+                # (bei JP-Karten ist base evtl. leer → dann akzeptieren)
+                if base and base not in dd["name"].lower():
+                    log.debug("Pfad1: Set+Nr Treffer '%s' verworfen (Name-Mismatch, "
+                              "erwartet '%s')", dd["name"], base)
+                    continue
+                log.info("Pfad1 (Set+Nr): '%s' Nr.%s aus Set '%s' (%s)",
+                         dd["name"], n, set_id, lang)
+                return _build_result(dd, name)
+
+    # ── PFAD 2: Namenssuche mit strikter Nummer-Filterung ────────────────────
+    candidates, lang = [], "de"
+    for candidate_lang in ("de", "en"):
+        for variant in _name_variants(name):
+            res = _search(candidate_lang, variant)
+            if res:
+                candidates, lang = res, candidate_lang
+                break
+        if candidates:
+            break
+
+    if not candidates:
+        return None
+
+    # Nummer-Filter: wenn bekannt, nur passende Kandidaten weiterverarbeiten
+    if num:
+        narrowed = [c for c in candidates
+                    if str(c.get("localId", "")).lstrip("0") == num.lstrip("0")]
+        if narrowed:
+            candidates = narrowed
+        # Kein Nummer-Treffer → trotzdem alle behalten, aber im Scoring bestrafen
+
+    details = [(_detail(lang, c["id"]) or c) for c in candidates[:12]]
+    if not details:
+        return None
+
+    # Scoring: Nummer dominiert (lieber kein Treffer als falscher)
+    best_d, best_score = None, -999.0
+    for d in details:
+        cm = (d.get("pricing") or {}).get("cardmarket") or {}
+        candidate_num = str(d.get("localId", "")).lstrip("0")
+        score = 0.0
+
+        if num:
+            if candidate_num == num.lstrip("0"):
+                score += 10   # starker Bonus: Nummer stimmt exakt
+            else:
+                score -= 20   # starke Strafe: Nummer stimmt NICHT
+
+        if _set_match(set_name, (d.get("set") or {}).get("name")):
+            score += 2
+        if want_tier != "other" and _rarity_tier(d.get("rarity")) == want_tier:
+            score += 4
+        if cm.get("trend") or cm.get("avg"):
+            score += 1
+
+        if score > best_score:
+            best_d, best_score = d, score
+
+    # Wenn kein Kandidat die Nummer trifft: lieber None als falsche Karte
+    if num and best_score < -10:
+        log.info("Pfad2: kein Kandidat mit Nr.%s fuer '%s' → kein Ergebnis", num, name)
+        return None
+
+    log.info("Pfad2 (Name): '%s' score=%.0f num=%s",
+             (best_d or {}).get("name"), best_score, num)
+    return _build_result(best_d or {}, name)
 
 
 def trend_from_prices(card: dict) -> dict:
