@@ -1051,13 +1051,13 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
 
     if source == "cardmarket_local":
         # Lokaler Cardmarket Price Guide: tagesaktuell, Link filtert auf DE-Verkäufer
-        body = f"💶 Ab: {fmt(analysis.get('min_price'))}\n"
-        body += f"📊 Trend: {fmt(market)}\n"
+        body = f"📊 Trend: {fmt(market)}\n"
         if analysis.get("avg7"):
-            body += f"📈 Ø 7 Tage: {fmt(analysis.get('avg7'))}\n"
+            body += f"📈 Ø 7T: {fmt(analysis.get('avg7'))}\n"
+        body += f"🌍 Niedrigst EU: {fmt(analysis.get('min_price'))}  (nicht nur 🇩🇪)\n"
         body += f"{trend['emoji']} {trend['trend'].capitalize()}\n"
         if url:
-            body += f"🔗 Cardmarket 🇩🇪: {url}"
+            body += f"🔗 Cardmarket 🇩🇪 Verkäufer: {url}"
     elif source == "tcgplayer_usd":
         # Letzter Fallback: TCGPlayer USA — Karte kaum auf Cardmarket DE verfügbar
         def fmt_usd(v):
