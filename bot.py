@@ -753,25 +753,45 @@ def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None
 
 
 # ---------------------------------------------------------------- Bilderkennung
+def _best_lookup(names: list, set_name=None, number=None, rarity=None):
+    """Probiert mehrere Namen (z.B. Original + englisch) und bevorzugt einen
+    Treffer MIT Preisdaten. Wichtig für JP-Karten: Originalname ist japanisch
+    (in TCGdex de/en nicht suchbar) → englischer Name greift."""
+    best = None
+    seen = set()
+    for qn in names:
+        if not qn or qn in seen:
+            continue
+        seen.add(qn)
+        card = pokeprice.lookup(qn, set_name, number, rarity)
+        if card:
+            if card.get("trend") or card.get("avg") or card.get("low"):
+                return card           # Treffer mit Preis → sofort nehmen
+            best = best or card       # Treffer ohne Preis → merken
+    return best
+
+
 def _pokeprice_analysis(recog: dict) -> dict:
-    """Marktpreis + Deal-Score über pokemontcg.io (wenn kein Cardmarket)."""
+    """Marktpreis über TCGdex (wenn kein Cardmarket)."""
     info = {
         "product_id": None, "min_price": None, "market_price": None,
         "trend": {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
                   "trend": "unbekannt", "recommendation": "egal"},
         "score": None, "best_offer": None, "source": "pokemontcg",
     }
-    # Deutschen Namen bevorzugen (TCGdex kennt deutsche Namen; en als Fallback)
-    query_name = recog.get("card_name") or recog.get("card_name_en", "")
-    # Cardmarket-Suchlink als Fallback (immer verfügbar)
-    search_url = pokeprice.cardmarket_search_url(query_name)
-    card = pokeprice.lookup(query_name, recog.get("set_name"),
-                            recog.get("card_number"), recog.get("rarity"))
+    names = [recog.get("card_name"), recog.get("card_name_en")]
+    card = _best_lookup(names, recog.get("set_name"),
+                        recog.get("card_number"), recog.get("rarity"))
+    fallback_name = recog.get("card_name_en") or recog.get("card_name") or ""
+    search_url = pokeprice.cardmarket_search_url(
+        (card or {}).get("name") or fallback_name)
     if not card:
-        log.info("pokeprice: keine Treffer fuer '%s' (Set '%s', Nr '%s')",
-                 query_name, recog.get("set_name"), recog.get("card_number"))
+        log.info("pokeprice: keine Treffer fuer %s (Set '%s', Nr '%s')",
+                 names, recog.get("set_name"), recog.get("card_number"))
         info["url"] = search_url
         return info
+    log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", card.get("name"),
+             card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
     log.info("pokeprice: '%s' -> trend=%s avg7=%s avg30=%s low=%s", query_name,
              card.get("trend"), card.get("avg7"), card.get("avg30"), card.get("low"))
     # Marktwert = Cardmarket-Trend (entspricht der auf Cardmarket angezeigten
@@ -786,9 +806,10 @@ def _pokeprice_analysis(recog: dict) -> dict:
 
 
 def _pokeprice_text(name: str, set_name: str | None = None,
-                    number: str | None = None, rarity: str | None = None) -> str:
+                    number: str | None = None, rarity: str | None = None,
+                    alt_name: str | None = None) -> str:
     """Preis-Übersicht über die Preis-Quelle (TCGdex)."""
-    card = pokeprice.lookup(name, set_name, number, rarity)
+    card = _best_lookup([name, alt_name], set_name, number, rarity)
     if not card:
         return (
             f"💰 *{name}*\n\nKeine Preisdaten gefunden (oft bei japanischen "
@@ -1043,7 +1064,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = await loop.run_in_executor(
                 None, _pokeprice_text, recog.get("card_name") or name,
                 recog.get("set_name"), recog.get("card_number"),
-                recog.get("rarity"),
+                recog.get("rarity"), recog.get("card_name_en"),
             )
         else:
             card = db.get_card_by_name(name)

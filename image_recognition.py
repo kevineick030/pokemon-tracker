@@ -119,10 +119,13 @@ def recognize(image_path: str) -> dict:
         with open(image_path, "rb") as f:
             image_bytes = f.read()
 
+        # MIME aus den Magic-Bytes ableiten (Telegram=JPEG, andere Quellen=PNG)
+        mime = "image/png" if image_bytes[:8].startswith(b"\x89PNG") else "image/jpeg"
+
         model = genai.GenerativeModel(config.GEMINI_MODEL)
         response = model.generate_content([
             PROMPT,
-            {"mime_type": "image/jpeg", "data": image_bytes},
+            {"mime_type": mime, "data": image_bytes},
         ])
         result = _extract_json(response.text or "")
     except Exception as exc:
