@@ -66,21 +66,21 @@ def _set_match(a: str | None, b: str | None) -> bool:
 
 
 def cardmarket_search_url(name: str) -> str:
-    """Cardmarket-Suche gefiltert auf deutsche Verkäufer (sellerCountry=5)."""
+    """Cardmarket-Suche gefiltert auf deutsche Verkäufer (sellerCountry=7)."""
     q = urllib.parse.quote_plus(name or "")
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-            f"?searchString={q}&sellerCountry=5")
+            f"?searchString={q}&sellerCountry=7")
 
 
 def _cardmarket_product_url(id_product) -> str | None:
     """Direktlink zur Cardmarket-Produktseite, gefiltert auf 🇩🇪 Verkäufer.
 
-    sellerCountry=5 = Deutschland. Beim Klick sieht der User sofort nur
+    sellerCountry=7 = Deutschland. Beim Klick sieht der User sofort nur
     deutsche Angebote, ohne manuell filtern zu müssen."""
     if not id_product:
         return None
     return (f"https://www.cardmarket.com/de/Pokemon/Products"
-            f"?idProduct={id_product}&sellerCountry=5")
+            f"?idProduct={id_product}&sellerCountry=7")
 
 
 # Set-Cache (einmal pro Sprache laden) für den direkten Set+Nummer-Pfad
