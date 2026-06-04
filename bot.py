@@ -1024,7 +1024,20 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
         f"{sealed_line}\n"
     )
 
+    is_sealed_product = image_recognition.is_sealed(recog.get("product_type"))
     source = analysis.get("source", "pokemontcg")
+
+    # Versiegelte Produkte (Tins, ETBs, Displays) haben keine Einzelkarten-Preise
+    if is_sealed_product and not market and not analysis.get("min_price"):
+        body = (
+            "💡 Versiegeltes Produkt — Preise sind auf Cardmarket verfügbar.\n"
+            "🔗 Auf Cardmarket suchen: "
+            f"{pokeprice.cardmarket_search_url(recog.get('card_name', ''))}\n\n"
+            "✅ Du kannst das Produkt trotzdem in deine Sammlung aufnehmen\n"
+            "   und den Kaufpreis manuell eintragen."
+        )
+        return head + body + "\n\nWas möchtest du tun?"
+
     if source == "cardmarket_local":
         # Lokaler Cardmarket Price Guide: tagesaktuell, direktes Produkt
         body = f"💶 Ab: {fmt(analysis.get('min_price'))}  (guenstigstes Angebot)\n"

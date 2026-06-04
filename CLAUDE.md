@@ -10,48 +10,77 @@ nicht-technisch → einfache Schritt-für-Schritt-Erklärungen).
 ---
 
 ## 1. Was ist das?
-Telegram-Bot + Web-Dashboard zum Tracken/Sammeln/Bewerten von Pokémon-Karten.
-Kernnutzung des Users: **Karte fotografieren → erkennen → Preis sehen → ggf. in
-die Sammlung/Watchlist legen.** Fokus: **deutsche Karten, deutsche Preise.**
+Telegram-Bot + Web-Dashboard zum Tracken/Sammeln/Bewerten von Pokémon-Karten
+**und versiegelten Produkten** (Tins, ETBs, Displays etc.).
+Kernnutzung: **Karte/Produkt fotografieren → erkennen → Preis sehen → in
+Sammlung/Watchlist legen.** Fokus: **deutsche Karten + Produkte, Cardmarket-Preise.**
 
 ---
 
 ## 2. Aktueller Stand (Ampel)
 
 ### 🟢 Funktioniert (live auf dem Server)
-- **Telegram-Bot läuft 24/7** (systemd, siehe Deployment).
-- **Foto-Workflow:** Foto → Gemini-Erkennung (deutsche + englische Namen,
-  Produkttyp) → Preise via **TCGdex** (echte Cardmarket-EUR-Preise, auch für
-  deutsche Karten) → exakter Cardmarket-Link → 4 Buttons
-  `[✅ Sammlung] [💰 Preis-Check] [🔔 Watchlist] [💼 Scalp-Track]`.
-  Die Erkennungs-Info **bleibt nach Button-Klick stehen** (Buttons werden nur
-  entfernt, Aktion kommt als neue Nachricht).
-- **`/preis <name>`** (TCGdex-Preise), **KI-Chat** (Claude Haiku, Freitext).
-- **Sammlung:** Foto → „Sammlung" → Kaufpreis abfragen → Eintrag. `/sammlung`,
-  `/wert`, `/gekauft`. **Tägliche Neubewertung (02:00) läuft über TCGdex** →
-  `/wert` + Dashboard-Chart bewegen sich (siehe `portfolio.update_all_values`).
-- **Budget** (`/budget`, `/ausgabe`), **Watchlist** (`/add`, `/watchlist`),
-  **Releases** (`/releases`, `/release_add`).
-- **Web-Dashboard** (Sammlung-Galerie, Wert, Watchlist, Budget, Scalp, Releases).
+
+#### Foto-Workflow (Einzelkarten)
+- Foto → Gemini-Erkennung (Name DE+EN+JP, Set, Nummer, Seltenheit, Produkttyp)
+- Preis-Lookup-Kette:
+  1. TCGdex → `idProduct` (Cardmarket-Produkt-ID) ermitteln
+  2. **Lokaler Cardmarket Price Guide** (`cm_price_guide` SQLite-Tabelle) → `low`+`trend`+`avg7` (EUR)
+  3. Fallback: TCGdex EU-Aggregate (wenn kein CM-Eintrag)
+- Anzeige: `Ab: X €` (günstigstes Angebot EU-weit) + Trend + Ø7T + direkter CM-Link
+- 4 Buttons: `[✅ Sammlung] [💰 Preis-Check] [🔔 Watchlist] [💼 Scalp-Track]`
+  (Scalp-Track nur bei versiegelten Produkten sichtbar)
+- Erkennungs-Info bleibt nach Button-Klick stehen (Buttons werden nur entfernt)
+
+#### Cardmarket Price Guide (NEU, 2026-06-04)
+- **Datei:** `https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json`
+- **75.099 Pokémon-Produkte** mit low/trend/avg/avg7/avg30 (EUR)
+- **Täglich 06:00** automatisch heruntergeladen + in SQLite (`cm_price_guide`) importiert
+- Kein API-Key nötig. Lookup: `idProduct` → sofortige lokale DB-Abfrage (kein Rate-Limit)
+- Modul: `cm_priceguide.py` (download_and_import, get_price, is_ready)
+
+#### TCGdex-Lookup (zwei-Pfad-Strategie, NEU 2026-06-04)
+- **Pfad 1 (bevorzugt):** Set + Kartennummer → direkter TCGdex-Endpunkt `/{lang}/cards/{set_id}-{num}`
+  → immer exakt, kein Scoring-Fehler möglich. Plausibilitätscheck: Basis-Pokémon-Name.
+- **Pfad 2 (Fallback):** Namenssuche → Nummer dominiert Scoring (+10 Treffer / -20 Mismatch).
+  Wenn kein Kandidat die Nummer trifft → `None` statt falscher Karte.
+- **Prinzip: lieber kein Preis als ein Preis von der falschen Karte.**
+
+#### Sammlung (Einzelkarten + versiegelte Produkte)
+- Foto → ✅ Sammlung → Kaufpreis eingeben → Eintrag in `portfolio`-Tabelle
+- Funktioniert für Einzelkarten UND Tins/ETBs/Displays
+- **Tägliche Neubewertung (02:00):** `portfolio.update_all_values()` → TCGdex→CM-Price-Guide
+- `/wert`, `/sammlung`, `/gekauft`
+
+#### Japanische Karten
+- Gemini-Prompt verlangt `card_name_en` als **PFLICHT** (auch bei JP-Karten, mit Beispielen)
+- TCGdex EN-Lookup liefert `idProduct` → CM Price Guide-Lookup funktioniert
+- Fallback: Namens-Suchlink wenn idProduct nicht gefunden
+
+#### Weitere funktionsfähige Features
+- **`/preis <name>`** (TCGdex-Preise), **KI-Chat** (Claude Haiku, Freitext)
+- **Budget** (`/budget`, `/ausgabe`), **Watchlist** (`/add`, `/watchlist`)
+- **Releases** (`/releases`, `/release_add`)
+- **Web-Dashboard** (Sammlung-Galerie, Wert, Watchlist, Budget, Scalp, Releases)
+  URL: `http://87.106.255.195:8090`
 
 ### 🟡 Eingeschränkt
-- **Preise sind EU-weite Cardmarket-Durchschnitte**, NICHT nach deutschen
-  Verkäufern gefiltert. Werte sind frisch + für die richtige Karte, aber die
-  Anzeige „nur DE-Verkäufer ab X €" kann nur die Cardmarket-API. Der **Link**
-  führt aber zu den echten DE-Angeboten.
-- **Versiegelte Produkte** (Displays/ETBs) haben **keine Preise** (TCGdex hat nur
-  Einzelkarten) → Profit-Rechner/Scalp-Profit ohne Daten.
+- **Preise sind EU-weite Cardmarket-Durchschnitte** (kein DE-Filter): `low` = günstigstes
+  EU-Angebot, nicht nur Deutschland. Der Link führt zu allen Cardmarket-Angeboten.
+- **Versiegelte Produkte** (Tins/ETBs/Displays) haben **keine Preise** im CM Price Guide
+  (der enthält nur Einzelkarten) → Preis zeigt `–`, manueller Kaufpreis beim Sammlung-Eintrag.
 - Dashboard läuft nur über **HTTP** (Passwort, aber unverschlüsselt).
+- Watchlist-Alerts: Scanner-Job läuft alle 30 Min, aber Cardmarket-API gibt 403 → keine Alerts.
 
-### 🔴 Läuft (noch) nicht
-- **Automatischer Schnäppchen-Scanner + Alerts** (30-Min-Job) nutzt Cardmarket →
-  `403`, keine Alerts. TODO: auf TCGdex umstellen (Preis-Drop-Alerts).
-- **Scalping** (retail_monitor/hotstock): Händler-Selektoren sind ungetestete
-  Platzhalter, Sealed-Preise fehlen → keine echten Restock-Alerts. Die Jobs
-  laufen, tun aber nichts Nützliches.
-- **Cardmarket-API**: nicht verbunden (keine Tokens). Sobald die 4 Tokens in der
-  `.env` stehen, schaltet der Bot automatisch auf echte DE-Filterung um
-  (`config.cardmarket_enabled()`).
+### 🔴 Läuft nicht / kaputt
+- **Automatischer Schnäppchen-Scanner + Alerts** → Cardmarket 403, keine Alerts.
+  TODO: auf TCGdex/CM-Price-Guide umstellen.
+- **Scalping** (retail_monitor/hotstock): Händler-Selektoren ungetestete Platzhalter,
+  Sealed-Preise fehlen → keine echten Restock-Alerts. Jobs laufen, tun nichts Nützliches.
+- **Cardmarket-API**: nicht verbunden (keine Tokens). Sobald 4 Tokens in `.env`,
+  schaltet Bot auf echte DE-Filterung um (`config.cardmarket_enabled()`).
+- **Tote Scheduler-Jobs**: Sealed-Preis-Job (Cardmarket 403), Watchlist-Scanner (403).
+  Aufräumen steht noch aus.
 
 ---
 
@@ -62,122 +91,96 @@ die Sammlung/Watchlist legen.** Fokus: **deutsche Karten, deutsche Preise.**
   `sk-holzfabrik-bot`, `rookiecard-telegram-bot`, `max` (+ `max-admin`),
   `crypto-tracker`. **NIEMALS globale Befehle** (`pkill`, killall, globale
   Restarts) — nur `/opt/pokemon-tracker` und die eigenen systemd-Units anfassen.
-  Mehrere Projekte nutzen eine `main.py` → `pkill -f main.py` hat schon mal
-  fremde Bots gekillt (Lektion gelernt).
-- **SSH:** `ssh root@87.106.255.195` — **passwortlos** (SSH-Key auf Kevins PC).
-  Claude kann Server-Befehle **direkt** ausführen, indem es vom lokalen
-  Bash-Tool `ssh root@87.106.255.195 "..."` aufruft (Key greift).
+- **SSH:** `ssh root@87.106.255.195` — passwortlos (SSH-Key auf Kevins PC).
+  Claude kann direkt via `ssh root@87.106.255.195 "..."` Befehle ausführen.
 - **Projektpfad auf dem Server:** `/opt/pokemon-tracker`
 - **Dienste (systemd):**
-  - `pokemon-tracker.service` → der Bot (`venv/bin/python main.py`)
-  - `pokemon-dashboard.service` → Dashboard (`gunicorn -w 2 -b 0.0.0.0:8090
-    dashboard.app:app`, `Environment=DASHBOARD_HTTPS=false`)
-- **Dashboard-URL:** `http://87.106.255.195:8090` · Passwort steht in der
-  `.env` (`DASHBOARD_PASSWORD`). Port 8090 gewählt, weil 5000/8081/80/443 belegt
-  waren (nginx + andere Projekte) — Port 8090 ist frei + von außen erreichbar.
-- **GitHub:** `https://github.com/kevineick030/pokemon-tracker`
-  (aktuell **public**; enthält **keine** Secrets — `.env` ist gitignored,
-  Historie auf Keys geprüft = sauber). Kann auf privat gestellt werden, dann
-  braucht der Server beim `git pull` einen Token/Deploy-Key.
+  - `pokemon-tracker.service` → Bot (`venv/bin/python main.py`)
+  - `pokemon-dashboard.service` → Dashboard (`gunicorn -w 2 -b 0.0.0.0:8090 dashboard.app:app`)
+- **Dashboard-URL:** `http://87.106.255.195:8090` · Passwort: `.env` → `DASHBOARD_PASSWORD`
 
-### Update-/Deploy-Workflow (wichtig!)
-Es gibt **drei Orte**: lokaler PC → GitHub → Server.
+### Update-/Deploy-Workflow
 1. Lokal ändern (`C:\Users\Kevin\Desktop\claude projekte\pokemon tracker`)
-2. `git commit` + `git push` (Claude kann pushen — Credentials sind im
-   Windows-Credential-Manager gecached; sonst pusht der User via GitHub Desktop)
-3. Auf dem Server: `cd /opt/pokemon-tracker && git pull && systemctl restart
-   pokemon-tracker` (bzw. `pokemon-dashboard` bei Dashboard-Änderungen).
-   Claude macht das direkt via `ssh ... "..."`.
-
-### Lokales Testen (Windows)
-- Python 3.13 global hat alle Bot-Pakete (durch früheres `pip install`).
-- Start: Doppelklick `start_bot.bat` ODER `python main.py`.
-- ⚠️ **NICHT** gleichzeitig mit dem Server-Bot laufen lassen → Telegram
-  „Conflict" (nur eine Instanz pro Token).
+2. `git commit` + `git push`
+3. Server: `cd /opt/pokemon-tracker && git pull && systemctl restart pokemon-tracker`
+   Claude macht Schritte 2+3 direkt.
 
 ---
 
-## 4. Bedienung
+## 4. Architektur / wichtige Dateien
 
-### Telegram
-- **Foto schicken** = wichtigster Weg (Erkennung + Preise + Buttons).
-- Commands: `/start /watchlist /add /remove /preis /status /threshold /score
-  /scan /sammlung /wert /gekauft /budget /ausgabe /briefing /import
-  /scalp /scalp_add /scalp_remove /scalp_pause /restocks /profit /releases
-  /release_add /retailers`
-- **Freitext** = KI-Experte (Claude Haiku).
-
-### Dashboard
-- `http://87.106.255.195:8090` → Login mit `DASHBOARD_PASSWORD` aus `.env`.
-- Seiten: Übersicht, Sammlung, Karte-Detail, Watchlist, Scalp, Scalp-Detail,
-  Releases, Budget.
-
----
-
-## 5. Architektur / wichtige Dateien
 ```
-main.py            Einstieg: Bot + APScheduler-Jobs
-bot.py             Telegram-Handler, Foto-Workflow, Buttons (on_callback)
-config.py          .env laden (override=True!), Konstanten, cardmarket_enabled()
-database.py        SQLite-Schema + Zugriff (pokemon_tracker.db)
-image_recognition.py  Gemini (Modell: gemini-2.5-flash), liefert card_name +
-                      card_name_en + product_type
-tcgdex.py          AKTUELLE Preis-Quelle (in bot.py als `pokeprice` aliasiert!)
-pokeprice.py       ALTE Quelle (pokemontcg.io) — nicht mehr genutzt, bleibt liegen
-cardmarket.py      Cardmarket-API (nur aktiv, wenn Tokens gesetzt)
-scanner.py         Watchlist-Scan (Cardmarket → derzeit tot, TODO: TCGdex)
-portfolio.py       Sammlungswert über TCGdex (tägl. Job läuft, 02:00)
+main.py              Einstieg: Bot + APScheduler-Jobs
+bot.py               Telegram-Handler, Foto-Workflow, Buttons (on_callback)
+config.py            .env laden (override=True!), Konstanten, cardmarket_enabled()
+                     CM_PRICE_GUIDE_URL, CM_PRICE_GUIDE_DOWNLOAD_HOUR=6
+database.py          SQLite-Schema + Zugriff (pokemon_tracker.db)
+                     Tabelle cm_price_guide (NEU): 75k CM-Produktpreise
+image_recognition.py Gemini (gemini-2.5-flash): card_name + card_name_en (PFLICHT)
+                     + set_name + card_number + rarity + language + product_type
+tcgdex.py            Name→idProduct-Mapper + Fallback-Preise
+                     Zwei-Pfad-Suche: Set+Nr direkt (Pfad1) / Namenssuche strikt (Pfad2)
+cm_priceguide.py     NEU: Cardmarket Price Guide Download + lokaler Lookup
+                     download_and_import() / get_price(product_id) / is_ready()
+pokeprice.py         ALT (pokemontcg.io) — nicht mehr genutzt, bleibt liegen
+cardmarket.py        Cardmarket-API (nur aktiv wenn Tokens gesetzt, derzeit leer)
+scanner.py           Watchlist-Scan (Cardmarket → 403, tot)
+portfolio.py         Sammlungswert: TCGdex→CM-Price-Guide, tägl. 02:00
 profit_calculator.py / sealed_prices.py / scalp_targets.py /
 retail_monitor.py / hotstock_monitor.py / restock_alerts.py /
-release_calendar.py   → Scalping-Modul (teils nicht funktional, siehe oben)
-dashboard/app.py + templates/ + static/   Flask-Dashboard
-retailers_config.json  Händler-CSS-Selektoren (Platzhalter, ungetestet)
+release_calendar.py  → Scalping-Modul (teils nicht funktional)
+dashboard/           Flask-Dashboard (app.py + templates/ + static/)
 ```
 
 ### Schlüssel-Entscheidungen
-- **Preis-Quelle = TCGdex** (`api.tcgdex.net`): mehrsprachig (deutsche Namen!) +
-  tagesaktuelle Cardmarket-EUR-Preise + Produkt-ID für exakten Link. Ersetzt
-  pokemontcg.io, das an deutschen/japanischen Karten scheiterte. In `bot.py`
-  via `import tcgdex as pokeprice` eingebunden → gleiche Schnittstelle
-  (`lookup`, `trend_from_prices`, `cardmarket_search_url`).
-- **`config.load_dotenv(override=True)`** — sonst überschreibt eine leere
-  OS-Umgebungsvariable die `.env` (Bug bei ANTHROPIC_API_KEY gehabt).
-- **Gemini-Modell `gemini-2.5-flash`** (das alte `gemini-2.0-flash-exp` ist
-  abgeschaltet → 404). Paket `google.generativeai` ist deprecated, funktioniert
-  aber noch.
+- **Preis-Architektur (2026-06-04):**
+  - TCGdex: kostenlose API, liefert `idProduct` (Cardmarket-ID) + Fallback-Preise
+  - CM Price Guide JSON: tägl. Download ohne API-Key, 75k Produkte, `low`+`trend`+`avg7`
+  - Lookup-Kette: TCGdex→idProduct → lokale CM-DB → Fallback TCGdex direkt
+- **TCGdex-Matching:** Kartennummer hat absoluten Vorrang. Falscher Preis ist schlimmer
+  als kein Preis. Pfad1 (Set+Nr) schlägt immer Pfad2 (Name).
+- **JP-Karten:** Gemini extrahiert immer englischen Namen → TCGdex EN-Lookup → idProduct OK.
+- **`config.load_dotenv(override=True)`** — verhindert leere OS-Umgebungsvariable
+  die `.env` überschreibt (Bug bei ANTHROPIC_API_KEY gehabt).
+- **Gemini-Modell `gemini-2.5-flash`** (altes `gemini-2.0-flash-exp` → 404, abgeschaltet).
 - **`.env`** enthält: Telegram-Token+ChatID, Anthropic-Key, Gemini-Key,
-  Dashboard-Passwort+Secret. **Cardmarket-Tokens leer.** `POKEMONTCG_API_KEY`
-  leer (TCGdex braucht eh keinen Key).
+  Dashboard-Passwort+Secret, `CM_PRICE_GUIDE_URL`. Cardmarket-Tokens leer.
+- **Geteilter Server** → niemals `pkill -f main.py` o.ä. — killt fremde Bots!
+
+### Scheduler-Jobs (main.py)
+| Job | Wann | Status |
+|-----|------|--------|
+| Watchlist-Scan | alle 30 Min | 🔴 Cardmarket 403 |
+| Tägliches Briefing | 09:00 | 🟢 |
+| Portfolio-Bewertung | 02:00 | 🟢 TCGdex+CM-Price-Guide |
+| CM Price Guide Download | 06:00 | 🟢 NEU |
+| Retail-Monitor | alle 120s | 🔴 Platzhalter-Selektoren |
+| HotStock-Monitor | alle 60s | 🔴 |
+| Sealed-Preise (CM) | alle 6h | 🔴 CM 403 |
+| Release-Kalender | 09:05 | 🟡 |
 
 ---
 
-## 6. Offene TODOs / nächste Schritte
-Vom User priorisiert (zuletzt gewählt):
-1. **Kauf-Berater (Deal-Check):** beim Foto Kaufpreis eingeben → „Markt X €, du
-   zahlst Y € → -Z % → KAUFEN/SKIP". Echtzeit-Einkaufsberater.
-2. ✅ **Sammlung lebt (ERLEDIGT 2026-06-04):** Sammlungswert wird täglich (02:00)
-   über TCGdex aktualisiert → `/wert` + Dashboard-Chart bewegen sich. Toter
-   Cardmarket-Bewertungs-Job ersetzt (`portfolio.update_all_values`).
-3. **Sammlung-Extras:** Doppelte-Warnung beim Scannen, Set-Fortschritt
-   (`8/18 SIR`), CSV/Excel-Export, Quick-Sell-Schätzung nach Gebühren.
+## 5. Offene TODOs / nächste Schritte
 
-Weitere offene Punkte:
-- Watchlist-Scanner auf TCGdex umstellen (Preis-Drop-Alerts) — ersetzt toten
-  Cardmarket-Scan.
-- Tote/sinnlose Scheduler-Jobs aufräumen (Scalping, Cardmarket-Scan).
-- Für echte **DE-Verkäufer-Filterung**: Cardmarket-API beantragen (kostenpflichtig
-  + Freischaltung; Code schaltet automatisch um).
-- Dashboard optional auf **HTTPS** (über vorhandenen nginx + Domain + certbot).
-- Scalping: Händler-Selektoren an echte Seiten anpassen ODER Scalping pausieren.
+1. **Kauf-Berater (Deal-Check):** Foto → Kaufpreis eingeben → „Markt X €, du zahlst
+   Y € → -Z % → KAUFEN/SKIP". Echtzeit-Einkaufsberater.
+2. ✅ **Sammlung lebt (ERLEDIGT):** Tägliche Bewertung via TCGdex+CM-Price-Guide.
+3. ✅ **CM Price Guide (ERLEDIGT):** Tägl. Download, 75k Produkte, idProduct-Lookup.
+4. ✅ **Strikteres Matching (ERLEDIGT):** Nummer dominiert, kein falscher Preis mehr.
+5. **Sealed-Produkt-Sammlung:** Tins/ETBs/Displays per Foto in Sammlung aufnehmen
+   (Scan funktioniert, ✅ Sammlung-Button vorhanden → testen ob es nun geht nach Bugfix).
+6. **Sammlung-Extras:** Doppelte-Warnung beim Scannen, Set-Fortschritt (`8/18 SIR`),
+   CSV/Excel-Export, Quick-Sell-Schätzung nach Gebühren.
+7. **Watchlist-Scanner auf TCGdex/CM** umstellen → Preis-Drop-Alerts wieder aktiv.
+8. **Tote Jobs aufräumen**: Sealed-Preis-Job, Watchlist-Scanner (beide CM-abhängig).
 
 ---
 
-## 7. Sicherheit / Gotchas
-- **Secrets nur in `.env`** (gitignored). Niemals in `.py`/Templates schreiben.
-  (Hinweis: Telegram-Token, Anthropic- & Gemini-Key standen früher im Chat →
-  dem User wurde Rotation empfohlen.)
-- **Geteilter Server** → keine globalen Befehle (siehe §3).
+## 6. Sicherheit / Gotchas
+- **Secrets nur in `.env`** (gitignored). Niemals in `.py`/Templates.
+- **Geteilter Server** → keine globalen Befehle (§3).
 - **Telegram:** nur EINE Bot-Instanz pro Token gleichzeitig.
-- Beim Neustart über systemd erscheinen „failed"-Meldungen, wenn vorher eine
-  Hintergrund-Instanz mit `taskkill`/`pkill` beendet wurde — das ist erwartet,
-  kein Absturz.
+- Beim systemd-Neustart erscheinen „failed"-Meldungen wenn vorher Hintergrundinstanz
+  per taskkill/pkill beendet wurde — das ist normal, kein Absturz.
+- `CM_PRICE_GUIDE_URL` in `.env` falls Cardmarket den S3-Link ändert.
