@@ -1,48 +1,61 @@
 """Portfolio-Wert-Tracking.
 
-- Täglich um 02:00 Uhr: Marktpreis jeder Sammlungskarte abrufen und in
-  portfolio_value_history speichern.
+- Täglich (Job in main.py): Marktpreis jeder Sammlungskarte über TCGdex abrufen
+  und in portfolio_value_history speichern → /wert + Dashboard-Chart bewegen sich.
 - Gesamtwert  = Summe aktueller Marktpreise
 - Einstandswert = Summe purchase_price
 - Gewinn/Verlust = Differenz
+
+Preis-Quelle = TCGdex (tagesaktuelle Cardmarket-EUR-Preise, auch für deutsche
+Karten). Es wird derselbe Wert genommen wie beim Foto-Scan: Trend, sonst avg.
 """
 import logging
 
 import database as db
-from cardmarket import (
-    CardmarketClient, CardmarketError,
-    filter_de_offers, market_median,
-)
+import tcgdex
 
 log = logging.getLogger(__name__)
 
 
-def fetch_market_value(client: CardmarketClient, product_id: int) -> float | None:
-    """Aktueller Marktpreis (Median DE-Angebote) für ein Produkt."""
-    if not product_id:
+def fetch_market_value(card) -> float | None:
+    """Aktueller Marktpreis einer Sammlungskarte über TCGdex.
+
+    Sucht über Name + Set + Nummer + Seltenheit (wie der Foto-Scan) und nimmt
+    den Cardmarket-Trend, ersatzweise den Durchschnitt (avg).
+    """
+    name = card["card_name"]
+    if not name:
         return None
-    try:
-        articles = client.get_articles(product_id, maxResults=100)
-    except CardmarketError as exc:
-        log.warning("Marktwert für Produkt %s nicht abrufbar: %s", product_id, exc)
+    result = tcgdex.lookup(
+        name,
+        set_name=card["set_name"],
+        number=card["card_number"],
+        rarity=card["rarity"],
+    )
+    if not result:
         return None
-    offers = filter_de_offers(articles)
-    return market_median(offers)
+    value = result.get("trend") or result.get("avg")
+    return float(value) if value is not None else None
 
 
-def update_all_values(client: CardmarketClient) -> int:
-    """Speichert für jede Sammlungskarte den aktuellen Marktwert.
+def update_all_values() -> int:
+    """Speichert für jede Sammlungskarte den aktuellen Marktwert (TCGdex).
 
     Rückgabe: Anzahl aktualisierter Karten.
     """
     cards = db.get_portfolio()
     updated = 0
     for card in cards:
-        value = fetch_market_value(client, card["cardmarket_product_id"])
+        try:
+            value = fetch_market_value(card)
+        except Exception:
+            log.exception("Marktwert für '%s' nicht abrufbar", card["card_name"])
+            value = None
         if value is not None:
             db.add_portfolio_value(card["id"], value)
             updated += 1
-    log.info("Portfolio-Bewertung: %d/%d Karten aktualisiert.", updated, len(cards))
+    log.info("Portfolio-Bewertung (TCGdex): %d/%d Karten aktualisiert.",
+             updated, len(cards))
     return updated
 
 

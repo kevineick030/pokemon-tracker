@@ -55,11 +55,10 @@ async def job_briefing(application: Application) -> None:
 
 
 async def job_portfolio_valuation(application: Application) -> None:
-    log.info("Scheduler: Portfolio-Wertaktualisierung.")
-    mkm = application.bot_data["mkm"]
+    log.info("Scheduler: Portfolio-Wertaktualisierung (TCGdex).")
     loop = asyncio.get_running_loop()
     try:
-        await loop.run_in_executor(None, portfolio.update_all_values, mkm)
+        await loop.run_in_executor(None, portfolio.update_all_values)
     except Exception:
         log.exception("Portfolio-Bewertungs-Job fehlgeschlagen")
 
