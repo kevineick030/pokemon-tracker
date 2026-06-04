@@ -66,16 +66,21 @@ def _set_match(a: str | None, b: str | None) -> bool:
 
 
 def cardmarket_search_url(name: str) -> str:
+    """Cardmarket-Suche gefiltert auf deutsche Verkäufer (sellerCountry=5)."""
     q = urllib.parse.quote_plus(name or "")
-    return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}"
+    return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
+            f"?searchString={q}&sellerCountry=5")
 
 
 def _cardmarket_product_url(id_product) -> str | None:
-    """Offizieller Cardmarket-Redirect zur EXAKTEN Produktseite über die ID.
-    Format: cardmarket.com/{Spiel}/Products?idProduct={ID} (NICHT .../Singles?...)."""
+    """Direktlink zur Cardmarket-Produktseite, gefiltert auf 🇩🇪 Verkäufer.
+
+    sellerCountry=5 = Deutschland. Beim Klick sieht der User sofort nur
+    deutsche Angebote, ohne manuell filtern zu müssen."""
     if not id_product:
         return None
-    return f"https://www.cardmarket.com/de/Pokemon/Products?idProduct={id_product}"
+    return (f"https://www.cardmarket.com/de/Pokemon/Products"
+            f"?idProduct={id_product}&sellerCountry=5")
 
 
 # Set-Cache (einmal pro Sprache laden) für den direkten Set+Nummer-Pfad
@@ -147,6 +152,14 @@ def _build_result(d: dict, name: str) -> dict:
     set_obj = d.get("set") or {}
     link = (_cardmarket_product_url(cm.get("idProduct"))
             or cardmarket_search_url(d.get("name") or name))
+
+    # TCGPlayer (USD) als Fallback wenn keine CM-Preise
+    tcgp = (d.get("pricing") or {}).get("tcgplayer") or {}
+    # Bevorzugt: holofoil > normal (höherwertiger Marktpreis)
+    tcgp_data = tcgp.get("holofoil") or tcgp.get("normal") or tcgp.get("1st Edition") or {}
+    tcgp_market = tcgp_data.get("marketPrice")
+    tcgp_low = tcgp_data.get("lowPrice")
+
     return {
         "id": d.get("id"),
         "name": d.get("name"),
@@ -163,6 +176,9 @@ def _build_result(d: dict, name: str) -> dict:
         "trend": cm.get("trend"),
         "avg7": cm.get("avg7"),
         "avg30": cm.get("avg30"),
+        # TCGPlayer (USD) — Fallback wenn keine CM-Preise vorhanden
+        "tcgp_market_usd": tcgp_market,
+        "tcgp_low_usd": tcgp_low,
     }
 
 
