@@ -68,8 +68,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/import <id> – Cardmarket-Wunschliste importieren\n"
         "/status – Bot-Status\n\n"
         "📸 *Schick mir ein Foto* einer Karte oder eines versiegelten Produkts — "
-        "ich erkenne es und biete dir an:\n"
-        "✅ Sammlung · 💰 Preis-Check · 🔔 Watchlist · 💼 Scalp-Track\n\n"
+        "ich erkenne es, zeige dir Preis + Trend, und du wählst per Button:\n"
+        "✅ Bestätigen → ➕ Sammlung · 🔔 Watchlist · 💼 Scalp-Track\n\n"
         "Schreib mir einfach eine Frage für den KI-Experten 🤖",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -692,6 +692,45 @@ def _build_action_keyboard(keys: list[str], is_sealed: bool) -> InlineKeyboardMa
     return InlineKeyboardMarkup(rows)
 
 
+def _build_confirmation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Stimmt so", callback_data="pc:confirm"),
+        InlineKeyboardButton("❌ Falsch erkannt", callback_data="pc:wrong"),
+    ]])
+
+
+def _build_price_keyboard(is_sealed: bool) -> InlineKeyboardMarkup:
+    if is_sealed:
+        presets = [("20€", "pc:pr_20"), ("35€", "pc:pr_35"),
+                   ("50€", "pc:pr_50"), ("100€", "pc:pr_100")]
+    else:
+        presets = [("2€", "pc:pr_2"), ("5€", "pc:pr_5"),
+                   ("10€", "pc:pr_10"), ("20€", "pc:pr_20")]
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(l, callback_data=d) for l, d in presets[:2]],
+        [InlineKeyboardButton(l, callback_data=d) for l, d in presets[2:]],
+        [InlineKeyboardButton("💬 Anderen Preis eingeben", callback_data="pc:pr_other")],
+    ])
+
+
+def _build_condition_keyboard() -> InlineKeyboardMarkup:
+    conds = [("NM", "pc:cd_NM"), ("LP", "pc:cd_LP"),
+             ("MP", "pc:cd_MP"), ("HP", "pc:cd_HP")]
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(l, callback_data=d) for l, d in conds
+    ]])
+
+
+def _build_threshold_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("−10%", callback_data="pc:th_10"),
+         InlineKeyboardButton("−15%", callback_data="pc:th_15")],
+        [InlineKeyboardButton("−20%", callback_data="pc:th_20"),
+         InlineKeyboardButton("−25%", callback_data="pc:th_25")],
+        [InlineKeyboardButton("💬 Anderen Wert eingeben", callback_data="pc:th_other")],
+    ])
+
+
 def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None,
                       name: str, card_id: int | None = None) -> str:
     """Erstellt den Preis-Check-Text: Top-5 DE-Angebote, DE/EN/JP-Vergleich,
@@ -1015,10 +1054,7 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     msg = _format_recognition(recog, analysis)
-    is_sealed = image_recognition.is_sealed(recog.get("product_type"))
-    keyboard = _build_action_keyboard(
-        ["collect", "price", "watch", "scalp"], is_sealed
-    )
+    keyboard = _build_confirmation_keyboard()
     await status.edit_text(msg, reply_markup=keyboard, disable_web_page_preview=True)
 
 
@@ -1110,15 +1146,95 @@ async def _disable_buttons(query) -> None:
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verarbeitet die Inline-Buttons nach Bilderkennung bzw. /preis und /add.
+    """Verarbeitet alle Inline-Buttons nach Bilderkennung, Sammlung, Watchlist und Scalp."""
 
-    Wichtig: Die ursprüngliche Erkennungs-Nachricht bleibt erhalten (mit Infos
-    unter dem Foto). Aktionen werden als NEUE Nachricht darunter gesendet.
-    """
     query = update.callback_query
     await query.answer()
     data = query.data or ""
 
+    # --- 💶 Preis-Buttons (nach Sammlung-Klick) ---
+    if data.startswith("pc:pr_"):
+        price_key = data[6:]
+        card_id = context.user_data.get("awaiting_price")
+        if not card_id:
+            await _disable_buttons(query)
+            await query.message.reply_text("⌛ Session abgelaufen — schick das Foto bitte neu.")
+            return
+        if price_key == "other":
+            await _disable_buttons(query)
+            await query.message.reply_text("💶 Kaufpreis eingeben (z.B. 12.50):")
+            return
+        try:
+            price = float(price_key.replace(",", "."))
+        except ValueError:
+            return
+        context.user_data["chosen_price"] = price
+        row = db.get_portfolio_card(card_id)
+        gemini_cond = row["condition"] if row else None
+        cond_hint = f"\nGemini-Schätzung: {gemini_cond}" if gemini_cond else ""
+        await _disable_buttons(query)
+        await query.message.reply_text(
+            f"✅ Preis: {price:.2f}€{cond_hint}\n\n📋 Zustand der Karte?",
+            reply_markup=_build_condition_keyboard(),
+        )
+        return
+
+    # --- 📋 Zustand-Buttons (nach Preis-Auswahl) ---
+    if data.startswith("pc:cd_"):
+        condition = data[6:]
+        card_id = context.user_data.get("awaiting_price")
+        chosen_price = context.user_data.get("chosen_price")
+        if not card_id or chosen_price is None:
+            await _disable_buttons(query)
+            await query.message.reply_text("⌛ Session abgelaufen — schick das Foto bitte neu.")
+            return
+        db.update_portfolio_purchase_price(card_id, chosen_price)
+        db.update_portfolio_condition(card_id, condition)
+        db.add_expense(chosen_price, f"Kauf: {_portfolio_name(card_id)}")
+        card_name = _portfolio_name(card_id)
+        val_row = db.get_latest_portfolio_value(card_id)
+        market_val = val_row["market_value"] if val_row else None
+        market_txt = f" | Markt: {market_val:.2f}€" if market_val else ""
+        profit_txt = ""
+        if market_val and chosen_price > 0:
+            diff_pct = (market_val - chosen_price) / chosen_price * 100
+            s = "+" if diff_pct >= 0 else ""
+            profit_txt = f" ({s}{diff_pct:.0f}%)"
+        context.user_data.pop("awaiting_price", None)
+        context.user_data.pop("chosen_price", None)
+        context.user_data.pop("pending_is_sealed", None)
+        await _disable_buttons(query)
+        await query.message.reply_text(
+            f"✅ {card_name} in der Sammlung!\n"
+            f"💶 Gekauft: {chosen_price:.2f}€{market_txt}{profit_txt}\n"
+            f"📋 Zustand: {condition}"
+        )
+        return
+
+    # --- 🔔 Schwellen-Buttons (nach Watchlist-Klick) ---
+    if data.startswith("pc:th_"):
+        th_key = data[6:]
+        card_id = context.user_data.get("awaiting_alert_threshold")
+        if not card_id:
+            await _disable_buttons(query)
+            return
+        if th_key == "other":
+            await _disable_buttons(query)
+            await query.message.reply_text("Prozentzahl eingeben (z.B. 18 für −18%):")
+            return
+        try:
+            threshold = float(th_key)
+        except ValueError:
+            return
+        db.set_card_alert_threshold(card_id, threshold)
+        context.user_data.pop("awaiting_alert_threshold", None)
+        await _disable_buttons(query)
+        await query.message.reply_text(
+            f"🔔 Alarmiere bei ≥ {threshold:.0f}% Ersparnis. Automatische Scans sind aktiv."
+        )
+        return
+
+    # --- Ab hier: pending_card wird benötigt ---
     pending = context.user_data.get("pending_card")
     if not pending:
         await query.message.reply_text(
@@ -1134,7 +1250,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = analysis.get("product_id")
     is_sealed = image_recognition.is_sealed(recog.get("product_type"))
 
-    # --- 💰 Preis-Check: Details als NEUE Nachricht, Original + Buttons bleiben ---
+    # --- ✅ Bestätigung: Erkennung korrekt → Aktions-Buttons zeigen ---
+    if data == "pc:confirm":
+        keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
+        await query.edit_message_reply_markup(reply_markup=keyboard)
+        return
+
+    # --- ❌ Falsch erkannt: Korrektur-Eingabe anfordern ---
+    if data == "pc:wrong":
+        context.user_data["awaiting_correction"] = True
+        await _disable_buttons(query)
+        await query.message.reply_text(
+            "❌ Wie heißt die Karte oder das Produkt?\n"
+            "Gib den Namen ein (z.B. Pikachu ex oder Scarlet & Violet ETB):"
+        )
+        return
+
+    # --- 💰 Preis-Check: Details als NEUE Nachricht (für /preis und /add) ---
     if data == "pc:price":
         import asyncio
         loop = asyncio.get_running_loop()
@@ -1155,25 +1287,25 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # --- 🔔 Watchlist: hinzufügen + Alert-Schwelle abfragen ---
+    # --- 🔔 Watchlist: hinzufügen + Schwelle per Button ---
     if data == "pc:watch":
         card = db.get_card_by_name(name)
         if card:
-            await query.message.reply_text(
-                f"ℹ️ '{name}' ist bereits auf der Watchlist."
-            )
-        else:
-            card_id = db.add_card(name, product_id)
-            context.user_data["awaiting_alert_threshold"] = card_id
-            await query.message.reply_text(
-                f"🔔 '{name}' zur Watchlist hinzugefügt.\n"
-                f"Bei welchem Preis-Rückgang alarmieren? (Standard: "
-                f"{config.DEFAULT_WATCHLIST_ALERT_THRESHOLD:.0f}%)\n"
-                "Antworte mit einer Zahl oder „standard“."
-            )
-        await _disable_buttons(query)
-        _safe_remove(temp_path)
+            await _disable_buttons(query)
+            await query.message.reply_text(f"ℹ️ '{name}' ist bereits auf der Watchlist.")
+            _safe_remove(temp_path)
+            context.user_data.pop("pending_card", None)
+            return
+        card_id = db.add_card(name, product_id)
+        context.user_data["awaiting_alert_threshold"] = card_id
         context.user_data.pop("pending_card", None)
+        _safe_remove(temp_path)
+        await _disable_buttons(query)
+        await query.message.reply_text(
+            f"🔔 {name} zur Watchlist hinzugefügt.\n\n"
+            "Ab welchem Preisrückgang soll ich dich alarmieren?",
+            reply_markup=_build_threshold_keyboard(),
+        )
         return
 
     # --- 💼 Scalp-Track: nur für versiegelte Produkte ---
@@ -1193,7 +1325,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 product_type=recog.get("product_type"),
                 set_name=recog.get("set_name"),
             )
-        # Foto dauerhaft speichern, falls eines vorliegt
         if temp_path:
             final_path = os.path.join(
                 str(config.CARD_IMAGES_DIR), f"scalp_{scalp_id}_{int(time.time())}.jpg"
@@ -1212,8 +1343,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # --- ✅ Sammlung: Portfolio-Eintrag + Kaufpreis abfragen ---
+    # --- ➕ Sammlung: Karte erstellen + Preisauswahl per Button ---
     if data == "pc:collect":
+        existing_count = db.count_portfolio_by_name(name)
         card_id = db.add_portfolio_card(
             card_name=name,
             purchase_price=0.0,
@@ -1233,16 +1365,18 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.set_portfolio_image_path(card_id, final_path)
             except OSError:
                 log.warning("Foto konnte nicht dauerhaft gespeichert werden.")
-
         if analysis.get("market_price") is not None:
             db.add_portfolio_value(card_id, analysis["market_price"])
-
         context.user_data["awaiting_price"] = card_id
+        context.user_data["pending_is_sealed"] = is_sealed
         context.user_data.pop("pending_card", None)
         await _disable_buttons(query)
+        market = analysis.get("market_price")
+        dup_line = f"\n⚠️ Bereits {existing_count}x in deiner Sammlung!" if existing_count > 0 else ""
+        market_line = f"\n💰 Marktwert: {market:.2f}€" if market else ""
         await query.message.reply_text(
-            f"✅ '{name}' in die Sammlung aufgenommen.\n"
-            "💶 Wie viel hast du bezahlt? (Zahl in €)"
+            f"✅ {name} vorgemerkt.{dup_line}{market_line}\n\n💶 Was hast du bezahlt?",
+            reply_markup=_build_price_keyboard(is_sealed),
         )
         return
 
@@ -1263,11 +1397,33 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    # Follow-up-Eingaben haben Vorrang vor dem KI-Chat
+    import asyncio
+    loop = asyncio.get_running_loop()
 
-    # 1) Kaufpreis nach "Sammlung"
+    # 0) Korrektur nach "Falsch erkannt"
+    if context.user_data.get("awaiting_correction"):
+        context.user_data.pop("awaiting_correction", None)
+        pending = context.user_data.get("pending_card")
+        if not pending:
+            await update.message.reply_text("⌛ Session abgelaufen — schick das Foto bitte neu.")
+            return
+        pending["recog"]["card_name"] = text
+        pending["recog"]["card_name_en"] = text
+        status_msg = await update.message.reply_text(f"🔍 Suche nach \"{text}\" …")
+        analysis = await loop.run_in_executor(
+            None, _analyze_recognized_card, context, pending["recog"]
+        )
+        pending["analysis"] = analysis
+        context.user_data["pending_card"] = pending
+        msg = _format_recognition(pending["recog"], analysis)
+        await status_msg.edit_text(
+            msg, reply_markup=_build_confirmation_keyboard(), disable_web_page_preview=True
+        )
+        return
+
+    # 1) Kaufpreis nach "Sammlung" — Texteingabe (wenn "Anderen Preis eingeben" gewählt)
     pending_price_id = context.user_data.get("awaiting_price")
-    if pending_price_id:
+    if pending_price_id and context.user_data.get("chosen_price") is None:
         try:
             price = float(text.replace(",", ".").replace("€", "").strip())
         except ValueError:
@@ -1275,16 +1431,17 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Bitte den Kaufpreis als Zahl angeben (z. B. 49.90)."
             )
             return
-        db.update_portfolio_purchase_price(pending_price_id, price)
-        db.add_expense(price, f"Kauf: {_portfolio_name(pending_price_id)}")
-        context.user_data.pop("awaiting_price", None)
+        context.user_data["chosen_price"] = price
+        row = db.get_portfolio_card(pending_price_id)
+        gemini_cond = row["condition"] if row else None
+        cond_hint = f"\nGemini-Schätzung: {gemini_cond}" if gemini_cond else ""
         await update.message.reply_text(
-            f"✅ Kaufpreis {price:.2f}€ gespeichert. Karte ist vollständig in der "
-            "Sammlung (und als Ausgabe verbucht)."
+            f"✅ Preis: {price:.2f}€{cond_hint}\n\n📋 Zustand der Karte?",
+            reply_markup=_build_condition_keyboard(),
         )
         return
 
-    # 2) Alert-Schwelle nach "Watchlist"
+    # 2) Alert-Schwelle nach "Watchlist" — Texteingabe (wenn "Anderen Wert" gewählt)
     pending_alert_card = context.user_data.get("awaiting_alert_threshold")
     if pending_alert_card:
         default = config.DEFAULT_WATCHLIST_ALERT_THRESHOLD
@@ -1295,7 +1452,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 threshold = float(text.replace(",", ".").replace("%", "").strip())
             except ValueError:
                 await update.message.reply_text(
-                    f"Bitte eine Prozentzahl angeben oder „standard“ "
+                    f"Bitte eine Prozentzahl angeben oder 'standard' "
                     f"(Standard: {default:.0f}%)."
                 )
                 return

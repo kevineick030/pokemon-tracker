@@ -734,6 +734,23 @@ def update_portfolio_purchase_price(portfolio_card_id: int, price: float) -> Non
         )
 
 
+def update_portfolio_condition(portfolio_card_id: int, condition: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE portfolio SET condition = ? WHERE id = ?",
+            (condition, portfolio_card_id),
+        )
+
+
+def count_portfolio_by_name(name: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM portfolio WHERE LOWER(card_name) = LOWER(?)",
+            (name,),
+        ).fetchone()
+    return row["c"] if row else 0
+
+
 def set_portfolio_image_path(portfolio_card_id: int, image_path: str) -> None:
     with get_conn() as conn:
         conn.execute(
