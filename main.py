@@ -22,6 +22,7 @@ import bot
 import portfolio
 import briefing
 import cm_priceguide
+import deal_scanner
 import sealed_prices
 import release_calendar
 import restock_alerts
@@ -63,6 +64,47 @@ async def job_priceguide(application: Application) -> None:
         log.info("Price Guide: %d Produkte importiert.", count)
     except Exception:
         log.exception("Price-Guide-Job fehlgeschlagen")
+
+
+async def job_deal_scan(application: Application) -> None:
+    """Laeuft um 06:05 (nach Price-Guide-Download um 06:00).
+
+    1. SIR/IR-Cache aktualisieren (neue Karten aus TCGdex laden)
+    2. Deals aus CM Price Guide berechnen → an Telegram senden
+    3. Watchlist-Karten pruefen → Alerts bei Preisrueckgang
+    """
+    log.info("Scheduler: SIR/IR Deal-Scanner startet.")
+    loop = asyncio.get_running_loop()
+    chat_id = config.TELEGRAM_CHAT_ID
+    if not chat_id:
+        return
+
+    try:
+        # Schritt 1: SIR/IR-Cache aktualisieren
+        added = await loop.run_in_executor(None, deal_scanner.refresh_sir_ir_cache)
+        log.info("Deal-Scanner: %d neue SIR/IR-Karten gecacht.", added)
+
+        # Schritt 2: Deals berechnen und senden
+        deals = await loop.run_in_executor(None, deal_scanner.get_deals)
+        if deals:
+            msg = deal_scanner.format_deals_message(deals)
+            await application.bot.send_message(
+                chat_id=chat_id, text=msg,
+                parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True,
+            )
+            log.info("Deal-Scanner: %d Deals gesendet.", len(deals))
+
+        # Schritt 3: Watchlist-Alerts pruefen
+        alert_texts = await loop.run_in_executor(None, deal_scanner.check_watchlist_alerts)
+        for alert_text in alert_texts:
+            await application.bot.send_message(
+                chat_id=chat_id, text=alert_text, parse_mode=ParseMode.MARKDOWN,
+            )
+        if alert_texts:
+            log.info("Deal-Scanner: %d Watchlist-Alerts gesendet.", len(alert_texts))
+
+    except Exception:
+        log.exception("Deal-Scanner-Job fehlgeschlagen")
 
 
 async def job_portfolio_valuation(application: Application) -> None:
@@ -200,6 +242,12 @@ def setup_scheduler(application: Application) -> AsyncIOScheduler:
         CronTrigger(hour=config.PORTFOLIO_VALUATION_HOUR, minute=0),
         args=[application], id="portfolio_valuation",
         name="Portfolio-Wertaktualisierung",
+    )
+    scheduler.add_job(
+        job_deal_scan,
+        CronTrigger(hour=config.CM_PRICE_GUIDE_DOWNLOAD_HOUR, minute=5),
+        args=[application], id="deal_scan", name="SIR/IR Deal-Scanner",
+        max_instances=1, coalesce=True,
     )
 
     # --- Scalping-Jobs ---

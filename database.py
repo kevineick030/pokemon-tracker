@@ -165,6 +165,21 @@ CREATE TABLE IF NOT EXISTS pokemon_releases (
     notes               TEXT
 );
 
+-- SIR/IR-Karten-Cache (taeglich via TCGdex befuellt).
+-- Enthaelt idProduct (Cardmarket-ID) fuer alle Special/Illustration/Hyper Rares.
+CREATE TABLE IF NOT EXISTS sir_ir_cards (
+    id_product  INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    set_name    TEXT,
+    set_id      TEXT,
+    number      TEXT,
+    rarity      TEXT,
+    cm_url      TEXT,
+    updated_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sir_set ON sir_ir_cards(set_id, number);
+
 -- Taeglich aktualisierter Cardmarket Price Guide (kein API-Key noetig).
 -- Befuellt von cm_priceguide.download_and_import() um 06:00 Uhr.
 CREATE TABLE IF NOT EXISTS cm_price_guide (
@@ -734,6 +749,23 @@ def update_portfolio_purchase_price(portfolio_card_id: int, price: float) -> Non
         )
 
 
+def update_portfolio_condition(portfolio_card_id: int, condition: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE portfolio SET condition = ? WHERE id = ?",
+            (condition, portfolio_card_id),
+        )
+
+
+def count_portfolio_by_name(name: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM portfolio WHERE LOWER(card_name) = LOWER(?)",
+            (name,),
+        ).fetchone()
+    return row["c"] if row else 0
+
+
 def set_portfolio_image_path(portfolio_card_id: int, image_path: str) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -841,6 +873,63 @@ def get_cm_price(product_id: int):
             "SELECT * FROM cm_price_guide WHERE id_product = ?",
             (product_id,),
         ).fetchone()
+
+
+# ----------------------------------------------------------------------------
+# SIR/IR-Karten-Cache (TCGdex → idProduct-Mapping)
+# ----------------------------------------------------------------------------
+def upsert_sir_ir_card(id_product: int, name: str, set_name: str, set_id: str,
+                       number: str, rarity: str, cm_url: str | None = None) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO sir_ir_cards "
+            "(id_product, name, set_name, set_id, number, rarity, cm_url, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (id_product, name, set_name, set_id, number, rarity, cm_url, _now()),
+        )
+
+
+def sir_ir_card_exists(set_id: str, number: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sir_ir_cards WHERE set_id = ? AND number = ?",
+            (set_id, number),
+        ).fetchone()
+    return row is not None
+
+
+def get_sir_ir_cards() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM sir_ir_cards ORDER BY set_name, number").fetchall()
+
+
+def get_sir_ir_deals(min_discount_pct: float, min_trend_eur: float,
+                     limit: int) -> list[sqlite3.Row]:
+    """JOIN sir_ir_cards x cm_price_guide → Karten mit low deutlich unter trend."""
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT s.name, s.set_name, s.set_id, s.number, s.rarity,
+                   s.id_product, s.cm_url,
+                   c.trend, c.low, c.avg7, c.avg30,
+                   ROUND((c.trend - c.low) / c.trend * 100, 1) AS discount_pct
+            FROM sir_ir_cards s
+            JOIN cm_price_guide c ON c.id_product = s.id_product
+            WHERE c.trend >= ?
+              AND c.low > 0
+              AND c.trend > c.low
+              AND (c.trend - c.low) / c.trend * 100 >= ?
+            ORDER BY discount_pct DESC
+            LIMIT ?
+            """,
+            (min_trend_eur, min_discount_pct, limit),
+        ).fetchall()
+
+
+def sir_ir_cache_count() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS c FROM sir_ir_cards").fetchone()
+    return row["c"] if row else 0
 
 
 def cm_price_guide_count() -> int:
