@@ -656,9 +656,8 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cache_count = db.sir_ir_cache_count()
     if cache_count == 0:
         await update.message.reply_text(
-            "⏳ SIR/IR-Datenbank wird noch aufgebaut (taeglich 06:05).\n"
-            "Beim naechsten Start wird sie automatisch befllt. "
-            "Bis dahin: /deals morgen frueh erneut probieren."
+            "⏳ SIR/IR-Datenbank noch leer.\n"
+            "Nutze /deals_refresh um sie jetzt aufzubauen (dauert 3-5 Min)."
         )
         return
     msg_loading = await update.message.reply_text(
@@ -668,6 +667,31 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = deal_scanner.format_deals_message(deals)
     await msg_loading.edit_text(text, parse_mode=ParseMode.MARKDOWN,
                                 disable_web_page_preview=True)
+
+
+async def cmd_deals_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Baut SIR/IR-Cache manuell auf und zeigt danach sofort Deals."""
+    if not _authorized(update):
+        return
+    import asyncio, deal_scanner
+    loop = asyncio.get_running_loop()
+    cache_before = db.sir_ir_cache_count()
+    status = await update.message.reply_text(
+        "🔄 SIR/IR-Datenbank wird aufgebaut …\n"
+        "_(Das dauert 3-5 Minuten — TCGdex wird nach allen aktuellen Sets durchsucht)_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    added = await loop.run_in_executor(None, deal_scanner.refresh_sir_ir_cache)
+    cache_after = db.sir_ir_cache_count()
+    await status.edit_text(
+        f"✅ Cache aktualisiert: {cache_after} Karten ({added} neu hinzugefügt)\n"
+        "🔍 Suche jetzt nach Deals …",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    deals = await loop.run_in_executor(None, deal_scanner.get_deals)
+    text = deal_scanner.format_deals_message(deals)
+    await status.edit_text(text, parse_mode=ParseMode.MARKDOWN,
+                           disable_web_page_preview=True)
 
 
 async def cmd_retailers(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1575,6 +1599,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("releases", cmd_releases))
     application.add_handler(CommandHandler("release_add", cmd_release_add))
     application.add_handler(CommandHandler("deals", cmd_deals))
+    application.add_handler(CommandHandler("deals_refresh", cmd_deals_refresh))
     application.add_handler(CommandHandler("retailers", cmd_retailers))
     application.add_handler(CallbackQueryHandler(on_callback, pattern=r"^pc:"))
     application.add_handler(MessageHandler(filters.PHOTO, on_photo))
