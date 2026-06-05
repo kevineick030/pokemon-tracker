@@ -60,6 +60,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Wichtigste Befehle:*\n"
         "/watchlist – Beobachtungsliste\n"
         "/add <Name> – Karte hinzufügen\n"
+        "/deals – Beste SIR/IR-Deals heute 🔥\n"
         "/preis <Name> – Preis + Trend + Empfehlung\n"
         "/sammlung – Portfolio\n"
         "/wert – Gesamtwert + G/V\n"
@@ -644,6 +645,29 @@ async def cmd_release_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📅 Release eingetragen: {set_name} am {date_str}{pre_txt}."
     )
+
+
+async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zeigt aktuelle SIR/IR-Deals: Karten deutlich unter Cardmarket-Marktwert."""
+    if not _authorized(update):
+        return
+    import asyncio, deal_scanner
+    loop = asyncio.get_running_loop()
+    cache_count = db.sir_ir_cache_count()
+    if cache_count == 0:
+        await update.message.reply_text(
+            "⏳ SIR/IR-Datenbank wird noch aufgebaut (taeglich 06:05).\n"
+            "Beim naechsten Start wird sie automatisch befllt. "
+            "Bis dahin: /deals morgen frueh erneut probieren."
+        )
+        return
+    msg_loading = await update.message.reply_text(
+        f"🔍 Suche Deals in {cache_count} SIR/IR-Karten …"
+    )
+    deals = await loop.run_in_executor(None, deal_scanner.get_deals)
+    text = deal_scanner.format_deals_message(deals)
+    await msg_loading.edit_text(text, parse_mode=ParseMode.MARKDOWN,
+                                disable_web_page_preview=True)
 
 
 async def cmd_retailers(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1550,6 +1574,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("profit", cmd_profit))
     application.add_handler(CommandHandler("releases", cmd_releases))
     application.add_handler(CommandHandler("release_add", cmd_release_add))
+    application.add_handler(CommandHandler("deals", cmd_deals))
     application.add_handler(CommandHandler("retailers", cmd_retailers))
     application.add_handler(CallbackQueryHandler(on_callback, pattern=r"^pc:"))
     application.add_handler(MessageHandler(filters.PHOTO, on_photo))
