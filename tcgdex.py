@@ -75,11 +75,12 @@ def cardmarket_search_url(name: str) -> str:
 def _cardmarket_product_url(id_product) -> str | None:
     """Direktlink zur Cardmarket-Produktseite, gefiltert auf 🇩🇪 Verkäufer.
 
-    sellerCountry=7 = Deutschland. Beim Klick sieht der User sofort nur
-    deutsche Angebote, ohne manuell filtern zu müssen."""
+    sellerCountry=7 = Deutschland. /Singles ist die korrekte CM-Unterseite
+    fuer Einzelkarten — /Products allein landet auf der falschen Kategorie-Seite.
+    """
     if not id_product:
         return None
-    return (f"https://www.cardmarket.com/de/Pokemon/Products"
+    return (f"https://www.cardmarket.com/de/Pokemon/Products/Singles"
             f"?idProduct={id_product}&sellerCountry=7")
 
 

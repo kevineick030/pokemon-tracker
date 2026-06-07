@@ -898,6 +898,10 @@ def _pokeprice_analysis(recog: dict) -> dict:
     product_id = card.get("idProduct")
     info["product_id"] = product_id
     info["url"] = card.get("url") or search_url
+    # TCGdex-Match-Info für Anzeige in der Erkennungs-Nachricht
+    info["tcgdex_name"] = card.get("name")
+    info["tcgdex_set"] = card.get("set_name")
+    info["tcgdex_number"] = card.get("number")
 
     # 1) Lokaler CM Price Guide (bevorzugt: tagesaktuell, 75k Produkte)
     cm = cm_priceguide.get_price(product_id) if product_id else None
@@ -1110,7 +1114,6 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
     conf = int(round(recog.get("confidence", 0) * 100))
     market = analysis.get("market_price")
     trend = analysis["trend"]
-    is_free = analysis.get("source") == "pokemontcg"
 
     def fmt(v):
         return f"{v:.2f}€" if isinstance(v, (int, float)) and v > 0 else "–"
@@ -1120,13 +1123,36 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
         sealed_line = f"📦 Versiegeltes Produkt: {recog.get('product_type')}\n"
 
     url = analysis.get("url")
+
+    # Warnung wenn Konfidenz niedrig
+    conf_warn = " ⚠️ unsicher" if conf < 70 else ""
+
+    # TCGdex-Match anzeigen: was wurde auf Cardmarket WIRKLICH gefunden?
+    tcgdex_name = analysis.get("tcgdex_name")
+    tcgdex_set = analysis.get("tcgdex_set")
+    tcgdex_number = analysis.get("tcgdex_number")
+    if tcgdex_name:
+        if tcgdex_number:
+            cm_found = f"🔗 CM-Treffer: {tcgdex_name} | {tcgdex_number}"
+        else:
+            cm_found = f"🔗 CM-Treffer: {tcgdex_name}"
+        if tcgdex_set:
+            cm_found += f" | {tcgdex_set}"
+        # Warnung wenn TCGdex-Name stark vom Gemini-Namen abweicht
+        gemini_base = recog.get("card_name", "").lower().split(" ")[0]
+        if gemini_base and gemini_base not in tcgdex_name.lower():
+            cm_found += " ⚠️ Prüfen!"
+        cm_line = f"\n{cm_found}\n"
+    else:
+        cm_line = "\n⚠️ Kein CM-Treffer — Preis und Link könnten ungenau sein.\n"
+
     head = (
-        f"🔍 Erkannt! ({conf}% sicher)\n\n"
+        f"🔍 Erkannt! ({conf}%{conf_warn})\n\n"
         f"🃏 {recog.get('card_name', '?')} | {recog.get('card_number', '?')}\n"
         f"📦 {recog.get('set_name', '?')} | ⭐ {recog.get('rarity', '?')}\n"
         f"🌍 {recog.get('language', '?')} | Zustand ca.: "
         f"{recog.get('condition_estimate', '?')}\n"
-        f"{sealed_line}\n"
+        f"{sealed_line}{cm_line}"
     )
 
     is_sealed_product = image_recognition.is_sealed(recog.get("product_type"))
