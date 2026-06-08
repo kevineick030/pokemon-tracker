@@ -1041,8 +1041,30 @@ def _pokeprice_analysis(recog: dict) -> dict:
         url_from_card=(card or {}).get("url"),
     )
     if not card:
-        log.info("pokeprice: keine Treffer fuer %s (Set '%s', Nr '%s')",
+        log.info("pokeprice: kein TCGdex-Treffer fuer %s (Set '%s', Nr '%s') — versuche pokemontcg.io",
                  names, recog.get("set_name"), recog.get("card_number"))
+        # Direkter pokemontcg.io Versuch wenn TCGdex nichts findet
+        import pokeprice as pokemontcg_io
+        en_name = recog.get("card_name_en") or recog.get("card_name") or ""
+        po_card = pokemontcg_io.lookup(
+            en_name,
+            set_name=recog.get("set_name"),
+            number=recog.get("card_number"),
+        )
+        if po_card and (po_card.get("trend") or po_card.get("avg") or po_card.get("low")):
+            log.info("pokemontcg.io Direkt-Treffer '%s': trend=%s",
+                     po_card.get("name"), po_card.get("trend"))
+            info["market_price"] = po_card.get("trend") or po_card.get("avg")
+            info["min_price"] = po_card.get("low")
+            info["avg7"] = po_card.get("avg7")
+            info["avg30"] = po_card.get("avg30")
+            info["source"] = "pokemontcg"
+            info["trend"] = pokeprice.trend_from_prices(po_card)
+            info["url"] = po_card.get("url") or search_url
+            info["tcgdex_name"] = po_card.get("name")
+            info["tcgdex_set"] = po_card.get("set_name")
+            info["tcgdex_number"] = po_card.get("number")
+            return info
         info["url"] = search_url
         info["language"] = lang
         return info
@@ -1084,7 +1106,27 @@ def _pokeprice_analysis(recog: dict) -> dict:
         info["trend"] = pokeprice.trend_from_prices(card)
         return info
 
-    # 3) Letzter Fallback: TCGPlayer (USD) — Karte nicht auf Cardmarket DE vorhanden
+    # 3) pokemontcg.io Fallback: CM-EUR-Preise direkt (kein idProduct nötig)
+    import pokeprice as pokemontcg_io
+    po_card = pokemontcg_io.lookup(
+        recog.get("card_name_en") or card.get("name") or "",
+        set_name=recog.get("set_name"),
+        number=recog.get("card_number"),
+    )
+    if po_card and (po_card.get("trend") or po_card.get("avg") or po_card.get("low")):
+        log.info("pokemontcg.io Fallback '%s': trend=%s low=%s",
+                 po_card.get("name"), po_card.get("trend"), po_card.get("low"))
+        info["market_price"] = po_card.get("trend") or po_card.get("avg")
+        info["min_price"] = po_card.get("low")
+        info["avg7"] = po_card.get("avg7")
+        info["avg30"] = po_card.get("avg30")
+        info["source"] = "pokemontcg"
+        info["trend"] = pokeprice.trend_from_prices(po_card)
+        if po_card.get("url"):
+            info["url"] = po_card["url"]
+        return info
+
+    # 4) Letzter Fallback: TCGPlayer (USD)
     tcgp = card.get("tcgp_market_usd") or card.get("tcgp_low_usd")
     if tcgp:
         log.info("TCGPlayer-Fallback '%s': market_usd=%s", card.get("name"), tcgp)
