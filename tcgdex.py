@@ -75,15 +75,66 @@ def cardmarket_search_url(name: str) -> str:
 def _cardmarket_product_url(id_product) -> str | None:
     """Direktlink zur Cardmarket-Produktseite, gefiltert auf 🇩🇪 Verkäufer.
 
-    sellerCountry=7 = Deutschland. Beim Klick sieht der User sofort nur
-    deutsche Angebote, ohne manuell filtern zu müssen."""
+    sellerCountry=7 = Deutschland. /Singles ist die korrekte CM-Unterseite
+    fuer Einzelkarten — /Products allein landet auf der falschen Kategorie-Seite.
+    """
     if not id_product:
         return None
-    return (f"https://www.cardmarket.com/de/Pokemon/Products"
+    return (f"https://www.cardmarket.com/de/Pokemon/Products/Singles"
             f"?idProduct={id_product}&sellerCountry=7")
 
 
-# Set-Cache (einmal pro Sprache laden) für den direkten Set+Nummer-Pfad
+def _set_code_variants(code: str) -> list[str]:
+    """Erzeugt Varianten eines Set-Codes fuer direkten TCGdex-Zugriff.
+
+    sv06 -> [sv06, sv6]  |  sv3pt5 -> [sv3pt5]  |  151 -> [151, mew]
+    """
+    c = code.strip().lower()
+    variants = [c]
+    m = re.match(r'^([a-z]+)0*(\d+)$', c)
+    if m:
+        short = m.group(1) + m.group(2)
+        if short != c:
+            variants.append(short)
+    # Sonderfaelle
+    aliases = {"151": ["mew", "sv3pt5"], "mew": ["151", "sv3pt5"],
+               "par": ["sv4"], "tef": ["sv5"], "twm": ["sv6"],
+               "sco": ["sv7"], "ssp": ["sv8"]}
+    for extra in aliases.get(c, []):
+        if extra not in variants:
+            variants.append(extra)
+    return variants
+
+
+def lookup_by_set_and_number(set_code: str, number: str) -> dict | None:
+    """Direkte Karten-Suche ueber Set-Kuerzel und Kartennummer.
+
+    set_code: z.B. 'sv06', 'sv6', '151', 'par', 'twm'
+    number:   z.B. '10', '010', '10/198' (Slash-Teil wird ignoriert)
+    """
+    num_clean = number.split("/")[0].strip().lstrip("0") or "0"
+
+    for lang in ("de", "en"):
+        # Pfad A: set_code direkt als TCGdex-Set-ID verwenden
+        for try_id in _set_code_variants(set_code):
+            for n in (num_clean, num_clean.zfill(3), num_clean.zfill(2)):
+                dd = _detail(lang, f"{try_id}-{n}")
+                if dd and dd.get("name"):
+                    log.info("Direkt-Lookup: '%s' in Set '%s' Nr.%s (%s)",
+                             dd["name"], try_id, n, lang)
+                    return _build_result(dd, dd["name"])
+
+        # Pfad B: set_code als Set-Name per Fuzzy-Match aufloesen
+        set_id = _resolve_set_id(lang, set_code)
+        if set_id and set_id not in _set_code_variants(set_code):
+            for n in (num_clean, num_clean.zfill(3)):
+                dd = _detail(lang, f"{set_id}-{n}")
+                if dd and dd.get("name"):
+                    log.info("Name-Lookup: '%s' in Set '%s' Nr.%s (%s)",
+                             dd["name"], set_id, n, lang)
+                    return _build_result(dd, dd["name"])
+
+    return None
 _sets_cache: dict[str, list] = {}
 
 
