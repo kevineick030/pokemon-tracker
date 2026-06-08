@@ -1290,9 +1290,17 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
             cm_found = f"🔗 CM-Treffer: {tcgdex_name}"
         if tcgdex_set:
             cm_found += f" | {tcgdex_set}"
-        # Warnung wenn TCGdex-Name stark vom Gemini-Namen abweicht
-        gemini_base = recog.get("card_name", "").lower().split(" ")[0]
-        if gemini_base and gemini_base not in tcgdex_name.lower():
+        # Warnung nur wenn BEIDE Namen (DE + EN) nicht im TCGdex-Treffer sind
+        # verhindert False-Positive bei DE/EN-Übersetzungen (Glurak≠Charizard ist OK)
+        import re as _re
+        def _base(n):
+            return _re.sub(r'[\s-]+(ex|EX|GX|V|VMAX|VSTAR)\b.*$', '', (n or '')).strip().lower()
+        g_de = _base(recog.get("card_name", ""))
+        g_en = _base(recog.get("card_name_en", ""))
+        tcg_low = tcgdex_name.lower()
+        de_mismatch = g_de and g_de not in tcg_low
+        en_mismatch = (not g_en) or g_en not in tcg_low
+        if de_mismatch and en_mismatch:
             cm_found += " ⚠️ Prüfen!"
         cm_line = f"\n{cm_found}\n"
     else:
@@ -1667,6 +1675,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending_price_id and context.user_data.get("chosen_price") is None:
         try:
             price = float(text.replace(",", ".").replace("€", "").strip())
+            if price < 0:
+                raise ValueError("negativ")
         except ValueError:
             await update.message.reply_text(
                 "Bitte den Kaufpreis als Zahl angeben (z. B. 49.90)."
