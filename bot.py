@@ -61,6 +61,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/watchlist – Beobachtungsliste\n"
         "/add <Name> – Karte hinzufügen\n"
         "/deals – Beste SIR/IR-Deals heute 🔥\n"
+        "/karte <Set> <Nr> – Karte direkt suchen (z.B. /karte sv06 10)\n"
         "/preis <Name> – Preis + Trend + Empfehlung\n"
         "/sammlung – Portfolio\n"
         "/wert – Gesamtwert + G/V\n"
@@ -692,6 +693,128 @@ async def cmd_deals_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = deal_scanner.format_deals_message(deals)
     await status.edit_text(text, parse_mode=ParseMode.MARKDOWN,
                            disable_web_page_preview=True)
+
+
+async def cmd_karte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Direkte Kartensuche per Set-Kürzel + Nummer. Beispiel: /karte sv06 10/198"""
+    if not _authorized(update):
+        return
+    import asyncio
+
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text(
+            "📋 *Karten-Direktsuche*\n\n"
+            "Nutzung: `/karte <Set-Kürzel> <Nummer>`\n\n"
+            "Beispiele:\n"
+            "• `/karte sv06 10`\n"
+            "• `/karte sv06 10/198`\n"
+            "• `/karte 151 10`\n"
+            "• `/karte par 200`\n\n"
+            "Set-Kürzel findest du unten rechts auf der Karte "
+            "(z.B. `sv06`, `par`, `twm`, `151`).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    set_code = args[0].strip()
+    number_raw = args[1].strip()
+
+    status_msg = await update.message.reply_text(
+        f"🔍 Suche Karte {set_code.upper()} #{number_raw} …"
+    )
+
+    loop = asyncio.get_running_loop()
+    card = await loop.run_in_executor(
+        None, pokeprice.lookup_by_set_and_number, set_code, number_raw
+    )
+
+    if not card:
+        await status_msg.edit_text(
+            f"❌ Karte *{set_code.upper()} #{number_raw}* nicht gefunden.\n\n"
+            "Tipps:\n"
+            "• Set-Kürzel prüfen (z.B. `sv06`, `par`, `151`)\n"
+            "• Nummer ohne führende Nullen versuchen\n"
+            "• Nur die Zahl vor dem `/` angeben (z.B. `10` statt `10/198`)",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    # Preis-Infos aus CM Price Guide (idProduct vorhanden?)
+    cm_data = {}
+    id_product = card.get("idProduct")
+    if id_product:
+        cm_data = cm_priceguide.get_price(int(id_product)) or {}
+
+    low = cm_data.get("low") or card.get("low")
+    trend = cm_data.get("trend") or card.get("trend")
+    avg7 = cm_data.get("avg7") or card.get("avg7")
+
+    # Preis-Zeile aufbauen
+    if low and trend:
+        price_line = f"Ab: *{low:.2f} €*  |  Markt: {trend:.2f} €"
+        if avg7:
+            price_line += f"  |  Ø7T: {avg7:.2f} €"
+    elif low:
+        price_line = f"Ab: *{low:.2f} €*"
+    elif trend:
+        price_line = f"Markt: *{trend:.2f} €*"
+    else:
+        price_line = "Kein Preis verfügbar"
+
+    name = card.get("name") or "Unbekannte Karte"
+    set_name = card.get("set_name") or set_code.upper()
+    number = card.get("number") or number_raw
+    rarity = card.get("rarity") or ""
+    cm_url = card.get("url") or pokeprice.cardmarket_search_url(name)
+
+    caption = (
+        f"🃏 *{name}*\n"
+        f"📦 {set_name}  |  #{number}"
+        + (f"  |  {rarity}" if rarity else "")
+        + f"\n\n{price_line}\n"
+        f"[🔗 Cardmarket]({cm_url})"
+    )
+
+    # pending_card für Folge-Aktionen (Sammlung, Watchlist)
+    pending = {
+        "name": name,
+        "set_name": set_name,
+        "number": number,
+        "rarity": rarity,
+        "image": card.get("image"),
+        "url": cm_url,
+        "low": low,
+        "trend": trend,
+        "avg7": avg7,
+        "idProduct": id_product,
+        "currency": "EUR",
+    }
+    context.user_data["pending_card"] = pending
+
+    keyboard = _build_confirmation_keyboard()
+
+    image_url = card.get("image")
+    if image_url:
+        photo_url = image_url.rstrip("/") + "/high.jpg"
+        try:
+            await status_msg.delete()
+            await update.message.reply_photo(
+                photo=photo_url,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard,
+            )
+            return
+        except Exception:
+            pass  # Fallback auf Text wenn Bild nicht ladbar
+
+    await status_msg.edit_text(
+        caption,
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=False,
+        reply_markup=keyboard,
+    )
 
 
 async def cmd_retailers(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1626,6 +1749,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("release_add", cmd_release_add))
     application.add_handler(CommandHandler("deals", cmd_deals))
     application.add_handler(CommandHandler("deals_refresh", cmd_deals_refresh))
+    application.add_handler(CommandHandler("karte", cmd_karte))
     application.add_handler(CommandHandler("retailers", cmd_retailers))
     application.add_handler(CallbackQueryHandler(on_callback, pattern=r"^pc:"))
     application.add_handler(MessageHandler(filters.PHOTO, on_photo))
