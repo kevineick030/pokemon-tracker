@@ -974,7 +974,28 @@ def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None
 
 
 # ---------------------------------------------------------------- Bilderkennung
-def _best_lookup(names: list, set_name=None, number=None, rarity=None):
+def _cardmarket_url_for_card(name: str, set_name: str | None = None,
+                             number: str | None = None, language: str | None = None,
+                             url_from_card: str | None = None) -> str:
+    """Baut den bestmöglichen Cardmarket-Link für eine erkannte Karte.
+
+    JP-Karten bekommen einen gefilterten Suchlink (language=7 = Japanisch),
+    damit keine falsche EN-Version angezeigt wird.
+    """
+    if url_from_card:
+        return url_from_card
+
+    is_jp = (language or "").upper() == "JP"
+    if is_jp and name:
+        # Cardmarket: languageName=Japanese filtert auf JP-Karten
+        import urllib.parse
+        q = urllib.parse.quote_plus(name)
+        return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
+                f"?searchString={q}&language=7&sellerCountry=7")
+    return pokeprice.cardmarket_search_url(name or "")
+
+
+def _best_lookup(names: list, set_name=None, number=None, rarity=None, language=None):
     """Probiert mehrere Namen (z.B. Original + englisch) und bevorzugt einen
     Treffer MIT Preisdaten. Wichtig für JP-Karten: Originalname ist japanisch
     (in TCGdex de/en nicht suchbar) → englischer Name greift."""
@@ -984,7 +1005,7 @@ def _best_lookup(names: list, set_name=None, number=None, rarity=None):
         if not qn or qn in seen:
             continue
         seen.add(qn)
-        card = pokeprice.lookup(qn, set_name, number, rarity)
+        card = pokeprice.lookup(qn, set_name, number, rarity, language=language)
         if card:
             if card.get("trend") or card.get("avg") or card.get("low"):
                 return card           # Treffer mit Preis → sofort nehmen
@@ -1007,15 +1028,23 @@ def _pokeprice_analysis(recog: dict) -> dict:
         "score": None, "best_offer": None, "source": "pokemontcg",
     }
     names = [recog.get("card_name"), recog.get("card_name_en")]
+    lang = recog.get("language")
     card = _best_lookup(names, recog.get("set_name"),
-                        recog.get("card_number"), recog.get("rarity"))
+                        recog.get("card_number"), recog.get("rarity"),
+                        language=lang)
     fallback_name = recog.get("card_name_en") or recog.get("card_name") or ""
-    search_url = pokeprice.cardmarket_search_url(
-        (card or {}).get("name") or fallback_name)
+    search_url = _cardmarket_url_for_card(
+        name=(card or {}).get("name") or fallback_name,
+        set_name=recog.get("set_name"),
+        number=recog.get("card_number"),
+        language=lang,
+        url_from_card=(card or {}).get("url"),
+    )
     if not card:
         log.info("pokeprice: keine Treffer fuer %s (Set '%s', Nr '%s')",
                  names, recog.get("set_name"), recog.get("card_number"))
         info["url"] = search_url
+        info["language"] = lang
         return info
 
     product_id = card.get("idProduct")
@@ -1267,7 +1296,11 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
             cm_found += " ⚠️ Prüfen!"
         cm_line = f"\n{cm_found}\n"
     else:
-        cm_line = "\n⚠️ Kein CM-Treffer — Preis und Link könnten ungenau sein.\n"
+        is_jp_lang = recog.get("language", "").upper() == "JP"
+        if is_jp_lang:
+            cm_line = "\n🇯🇵 JP-exklusives Set — nicht in EU-Datenbank.\n"
+        else:
+            cm_line = "\n⚠️ Kein CM-Treffer — Preis und Link könnten ungenau sein.\n"
 
     head = (
         f"🔍 Erkannt! ({conf}%{conf_warn})\n\n"
@@ -1280,6 +1313,17 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
 
     is_sealed_product = image_recognition.is_sealed(recog.get("product_type"))
     source = analysis.get("source", "pokemontcg")
+    is_jp = recog.get("language", "").upper() == "JP"
+
+    # JP-Karten ohne Preis: klare Meldung + JP-gefilterter CM-Link
+    if is_jp and not market and not analysis.get("min_price"):
+        body = (
+            "💡 *Japanische Karte* — kein Preis in der EU-Datenbank gefunden.\n\n"
+            "JP-exklusive Sets (wie M4, S-Serien) sind auf Cardmarket unter "
+            "'Japanische Singles' gelistet — aber nicht im tägl. Price Guide.\n\n"
+            f"🔗 [Auf Cardmarket JP-Karten suchen]({url})"
+        )
+        return head + body + "\n\nWas möchtest du tun?"
 
     # Versiegelte Produkte (Tins, ETBs, Displays) haben keine Einzelkarten-Preise
     if is_sealed_product and not market and not analysis.get("min_price"):

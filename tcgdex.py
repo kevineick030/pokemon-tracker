@@ -234,7 +234,7 @@ def _build_result(d: dict, name: str) -> dict:
 
 
 def lookup(name: str, set_name: str | None = None, number: str | None = None,
-           rarity: str | None = None) -> dict | None:
+           rarity: str | None = None, language: str | None = None) -> dict | None:
     """Karten-Suche → normalisierte Preis-/Stammdaten.
 
     Zwei-Pfad-Strategie:
@@ -258,9 +258,13 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
     want_tier = _rarity_tier(rarity)
     base = _name_base(name)
 
+    # JP-Karten: zuerst EN/DE versuchen, dann ja als letzten Fallback
+    is_jp = (language or "").upper() == "JP"
+    search_langs = ("de", "en", "ja") if is_jp else ("de", "en")
+
     # ── PFAD 1: Direkte Set+Nummer-Suche ─────────────────────────────────────
     if num and set_name:
-        for lang in ("de", "en"):
+        for lang in search_langs:
             set_id = _resolve_set_id(lang, set_name)
             if not set_id:
                 continue
@@ -280,7 +284,7 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
 
     # ── PFAD 2: Namenssuche mit strikter Nummer-Filterung ────────────────────
     candidates, lang = [], "de"
-    for candidate_lang in ("de", "en"):
+    for candidate_lang in search_langs:
         for variant in _name_variants(name):
             res = _search(candidate_lang, variant)
             if res:
