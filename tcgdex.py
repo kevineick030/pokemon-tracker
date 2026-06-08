@@ -137,22 +137,104 @@ def lookup_by_set_and_number(set_code: str, number: str) -> dict | None:
     return None
 _sets_cache: dict[str, list] = {}
 
+# Hardcoded Set-Aliases: DE/EN Set-Name → TCGdex-ID
+# Verhindert API-Abhängigkeit bei der Set-Auflösung.
+# Schlüssel in Kleinbuchstaben; mehrere Varianten desselben Sets.
+_SET_NAME_TO_ID: dict[str, str] = {
+    # SV1
+    "scarlet & violet": "sv1", "karmesin & purpur": "sv1",
+    "scarlet violet": "sv1", "sv base": "sv1",
+    # SV2
+    "paldea evolved": "sv2", "entwicklungen in paldea": "sv2",
+    # SV3
+    "obsidian flames": "sv3", "obsidianflammen": "sv3",
+    # SV3pt5
+    "151": "sv3pt5", "scarlet & violet 151": "sv3pt5",
+    "mew 151": "sv3pt5",
+    # SV4
+    "paradox rift": "sv4", "paradox-rift": "sv4",
+    # SV4pt5
+    "paldean fates": "sv4pt5", "paldea im nebel": "sv4pt5",
+    # SV5
+    "temporal forces": "sv5", "kräfte im zeitenwandel": "sv5",
+    "krafte im zeitenwandel": "sv5",
+    # SV6
+    "twilight masquerade": "sv6", "maskerade im zwielicht": "sv6",
+    # SV6pt5
+    "shrouded fable": "sv6pt5", "im bann der maske": "sv6pt5",
+    # SV7
+    "stellar crown": "sv7", "strahlende sterne": "sv7",
+    # SV8
+    "surging sparks": "sv8", "funkelnde funken": "sv8",
+    # SV8pt5
+    "prismatic evolutions": "sv8pt5", "prismatische entwicklungen": "sv8pt5",
+    # SV9
+    "journey together": "sv9",
+    # Promo / Standard
+    "scarlet & violet black star promo": "svp",
+    "black star promo": "svp",
+    # Sword & Shield era
+    "crown zenith": "swsh12pt5",
+    "silver tempest": "swsh12",
+    "lost origin": "swsh11",
+    "astral radiance": "swsh10",
+    "brilliant stars": "swsh9",
+    "fusion strike": "swsh8",
+    "evolving skies": "swsh7",
+    "chilling reign": "swsh6",
+    "battle styles": "swsh5",
+    "shining fates": "swsh45",
+    "vivid voltage": "swsh4",
+    "darkness ablaze": "swsh3",
+    "rebel clash": "swsh2",
+    "sword & shield": "swsh1",
+}
+
+
+def _set_id_from_alias(set_name: str | None) -> str | None:
+    """Schnelle Auflösung per hardcoded Alias-Map, ohne API-Aufruf."""
+    if not set_name:
+        return None
+    key = set_name.strip().lower()
+    # Direkttreffer
+    if key in _SET_NAME_TO_ID:
+        return _SET_NAME_TO_ID[key]
+    # Teilstring-Treffer (z.B. "Twilight Masquerade 183/167" enthält den Set-Namen)
+    for alias, sid in _SET_NAME_TO_ID.items():
+        if alias in key or key in alias:
+            return sid
+    return None
+
 
 def _get_sets(lang: str) -> list:
     if lang not in _sets_cache:
         try:
             r = requests.get(f"{BASE}/{lang}/sets", timeout=15)
             r.raise_for_status()
-            _sets_cache[lang] = r.json() if isinstance(r.json(), list) else []
+            data = r.json()
+            if isinstance(data, list) and data:  # nur cachen wenn nicht leer!
+                _sets_cache[lang] = data
+            else:
+                return []  # kein Cache-Eintrag → nächster Aufruf versucht es erneut
         except (requests.RequestException, ValueError):
-            _sets_cache[lang] = []
+            return []  # kein Cache-Eintrag → Retry beim nächsten Aufruf möglich
     return _sets_cache[lang]
 
 
 def _resolve_set_id(lang: str, set_name: str | None) -> str | None:
-    """Findet die TCGdex-Set-ID zu einem (evtl. ungenauen) Set-Namen."""
+    """Findet die TCGdex-Set-ID zu einem (evtl. ungenauen) Set-Namen.
+
+    Reihenfolge: 1) Hardcoded Alias-Map (instant, kein API-Aufruf)
+                 2) Fuzzy-Match gegen live TCGdex-Sets-Liste (Fallback)
+    """
     if not set_name:
         return None
+    # 1) Schnelle hardcoded Auflösung
+    fast = _set_id_from_alias(set_name)
+    if fast:
+        log.debug("Set-Alias Treffer: '%s' → '%s'", set_name, fast)
+        return fast
+    # 2) Fuzzy-Fallback über API
     best, best_score = None, 0
     target = set_name.lower()
     twords = set(target.split())
@@ -234,7 +316,7 @@ def _build_result(d: dict, name: str) -> dict:
 
 
 def lookup(name: str, set_name: str | None = None, number: str | None = None,
-           rarity: str | None = None) -> dict | None:
+           rarity: str | None = None, language: str | None = None) -> dict | None:
     """Karten-Suche → normalisierte Preis-/Stammdaten.
 
     Zwei-Pfad-Strategie:
@@ -258,9 +340,13 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
     want_tier = _rarity_tier(rarity)
     base = _name_base(name)
 
+    # JP-Karten: zuerst EN/DE versuchen, dann ja als letzten Fallback
+    is_jp = (language or "").upper() == "JP"
+    search_langs = ("de", "en", "ja") if is_jp else ("de", "en")
+
     # ── PFAD 1: Direkte Set+Nummer-Suche ─────────────────────────────────────
     if num and set_name:
-        for lang in ("de", "en"):
+        for lang in search_langs:
             set_id = _resolve_set_id(lang, set_name)
             if not set_id:
                 continue
@@ -280,7 +366,7 @@ def lookup(name: str, set_name: str | None = None, number: str | None = None,
 
     # ── PFAD 2: Namenssuche mit strikter Nummer-Filterung ────────────────────
     candidates, lang = [], "de"
-    for candidate_lang in ("de", "en"):
+    for candidate_lang in search_langs:
         for variant in _name_variants(name):
             res = _search(candidate_lang, variant)
             if res:

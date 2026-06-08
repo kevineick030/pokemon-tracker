@@ -974,7 +974,28 @@ def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None
 
 
 # ---------------------------------------------------------------- Bilderkennung
-def _best_lookup(names: list, set_name=None, number=None, rarity=None):
+def _cardmarket_url_for_card(name: str, set_name: str | None = None,
+                             number: str | None = None, language: str | None = None,
+                             url_from_card: str | None = None) -> str:
+    """Baut den bestmöglichen Cardmarket-Link für eine erkannte Karte.
+
+    JP-Karten bekommen einen gefilterten Suchlink (language=7 = Japanisch),
+    damit keine falsche EN-Version angezeigt wird.
+    """
+    if url_from_card:
+        return url_from_card
+
+    is_jp = (language or "").upper() == "JP"
+    if is_jp and name:
+        # Cardmarket: languageName=Japanese filtert auf JP-Karten
+        import urllib.parse
+        q = urllib.parse.quote_plus(name)
+        return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
+                f"?searchString={q}&language=7&sellerCountry=7")
+    return pokeprice.cardmarket_search_url(name or "")
+
+
+def _best_lookup(names: list, set_name=None, number=None, rarity=None, language=None):
     """Probiert mehrere Namen (z.B. Original + englisch) und bevorzugt einen
     Treffer MIT Preisdaten. Wichtig für JP-Karten: Originalname ist japanisch
     (in TCGdex de/en nicht suchbar) → englischer Name greift."""
@@ -984,7 +1005,7 @@ def _best_lookup(names: list, set_name=None, number=None, rarity=None):
         if not qn or qn in seen:
             continue
         seen.add(qn)
-        card = pokeprice.lookup(qn, set_name, number, rarity)
+        card = pokeprice.lookup(qn, set_name, number, rarity, language=language)
         if card:
             if card.get("trend") or card.get("avg") or card.get("low"):
                 return card           # Treffer mit Preis → sofort nehmen
@@ -1007,15 +1028,45 @@ def _pokeprice_analysis(recog: dict) -> dict:
         "score": None, "best_offer": None, "source": "pokemontcg",
     }
     names = [recog.get("card_name"), recog.get("card_name_en")]
+    lang = recog.get("language")
     card = _best_lookup(names, recog.get("set_name"),
-                        recog.get("card_number"), recog.get("rarity"))
+                        recog.get("card_number"), recog.get("rarity"),
+                        language=lang)
     fallback_name = recog.get("card_name_en") or recog.get("card_name") or ""
-    search_url = pokeprice.cardmarket_search_url(
-        (card or {}).get("name") or fallback_name)
+    search_url = _cardmarket_url_for_card(
+        name=(card or {}).get("name") or fallback_name,
+        set_name=recog.get("set_name"),
+        number=recog.get("card_number"),
+        language=lang,
+        url_from_card=(card or {}).get("url"),
+    )
     if not card:
-        log.info("pokeprice: keine Treffer fuer %s (Set '%s', Nr '%s')",
+        log.info("pokeprice: kein TCGdex-Treffer fuer %s (Set '%s', Nr '%s') — versuche pokemontcg.io",
                  names, recog.get("set_name"), recog.get("card_number"))
+        # Direkter pokemontcg.io Versuch wenn TCGdex nichts findet
+        import pokeprice as pokemontcg_io
+        en_name = recog.get("card_name_en") or recog.get("card_name") or ""
+        po_card = pokemontcg_io.lookup(
+            en_name,
+            set_name=recog.get("set_name"),
+            number=recog.get("card_number"),
+        )
+        if po_card and (po_card.get("trend") or po_card.get("avg") or po_card.get("low")):
+            log.info("pokemontcg.io Direkt-Treffer '%s': trend=%s",
+                     po_card.get("name"), po_card.get("trend"))
+            info["market_price"] = po_card.get("trend") or po_card.get("avg")
+            info["min_price"] = po_card.get("low")
+            info["avg7"] = po_card.get("avg7")
+            info["avg30"] = po_card.get("avg30")
+            info["source"] = "pokemontcg"
+            info["trend"] = pokeprice.trend_from_prices(po_card)
+            info["url"] = po_card.get("url") or search_url
+            info["tcgdex_name"] = po_card.get("name")
+            info["tcgdex_set"] = po_card.get("set_name")
+            info["tcgdex_number"] = po_card.get("number")
+            return info
         info["url"] = search_url
+        info["language"] = lang
         return info
 
     product_id = card.get("idProduct")
@@ -1055,7 +1106,27 @@ def _pokeprice_analysis(recog: dict) -> dict:
         info["trend"] = pokeprice.trend_from_prices(card)
         return info
 
-    # 3) Letzter Fallback: TCGPlayer (USD) — Karte nicht auf Cardmarket DE vorhanden
+    # 3) pokemontcg.io Fallback: CM-EUR-Preise direkt (kein idProduct nötig)
+    import pokeprice as pokemontcg_io
+    po_card = pokemontcg_io.lookup(
+        recog.get("card_name_en") or card.get("name") or "",
+        set_name=recog.get("set_name"),
+        number=recog.get("card_number"),
+    )
+    if po_card and (po_card.get("trend") or po_card.get("avg") or po_card.get("low")):
+        log.info("pokemontcg.io Fallback '%s': trend=%s low=%s",
+                 po_card.get("name"), po_card.get("trend"), po_card.get("low"))
+        info["market_price"] = po_card.get("trend") or po_card.get("avg")
+        info["min_price"] = po_card.get("low")
+        info["avg7"] = po_card.get("avg7")
+        info["avg30"] = po_card.get("avg30")
+        info["source"] = "pokemontcg"
+        info["trend"] = pokeprice.trend_from_prices(po_card)
+        if po_card.get("url"):
+            info["url"] = po_card["url"]
+        return info
+
+    # 4) Letzter Fallback: TCGPlayer (USD)
     tcgp = card.get("tcgp_market_usd") or card.get("tcgp_low_usd")
     if tcgp:
         log.info("TCGPlayer-Fallback '%s': market_usd=%s", card.get("name"), tcgp)
@@ -1261,13 +1332,25 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
             cm_found = f"🔗 CM-Treffer: {tcgdex_name}"
         if tcgdex_set:
             cm_found += f" | {tcgdex_set}"
-        # Warnung wenn TCGdex-Name stark vom Gemini-Namen abweicht
-        gemini_base = recog.get("card_name", "").lower().split(" ")[0]
-        if gemini_base and gemini_base not in tcgdex_name.lower():
+        # Warnung nur wenn BEIDE Namen (DE + EN) nicht im TCGdex-Treffer sind
+        # verhindert False-Positive bei DE/EN-Übersetzungen (Glurak≠Charizard ist OK)
+        import re as _re
+        def _base(n):
+            return _re.sub(r'[\s-]+(ex|EX|GX|V|VMAX|VSTAR)\b.*$', '', (n or '')).strip().lower()
+        g_de = _base(recog.get("card_name", ""))
+        g_en = _base(recog.get("card_name_en", ""))
+        tcg_low = tcgdex_name.lower()
+        de_mismatch = g_de and g_de not in tcg_low
+        en_mismatch = (not g_en) or g_en not in tcg_low
+        if de_mismatch and en_mismatch:
             cm_found += " ⚠️ Prüfen!"
         cm_line = f"\n{cm_found}\n"
     else:
-        cm_line = "\n⚠️ Kein CM-Treffer — Preis und Link könnten ungenau sein.\n"
+        is_jp_lang = recog.get("language", "").upper() == "JP"
+        if is_jp_lang:
+            cm_line = "\n🇯🇵 JP-exklusives Set — nicht in EU-Datenbank.\n"
+        else:
+            cm_line = "\n⚠️ Kein CM-Treffer — Preis und Link könnten ungenau sein.\n"
 
     head = (
         f"🔍 Erkannt! ({conf}%{conf_warn})\n\n"
@@ -1280,6 +1363,17 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
 
     is_sealed_product = image_recognition.is_sealed(recog.get("product_type"))
     source = analysis.get("source", "pokemontcg")
+    is_jp = recog.get("language", "").upper() == "JP"
+
+    # JP-Karten ohne Preis: klare Meldung + JP-gefilterter CM-Link
+    if is_jp and not market and not analysis.get("min_price"):
+        body = (
+            "💡 *Japanische Karte* — kein Preis in der EU-Datenbank gefunden.\n\n"
+            "JP-exklusive Sets (wie M4, S-Serien) sind auf Cardmarket unter "
+            "'Japanische Singles' gelistet — aber nicht im tägl. Price Guide.\n\n"
+            f"🔗 [Auf Cardmarket JP-Karten suchen]({url})"
+        )
+        return head + body + "\n\nWas möchtest du tun?"
 
     # Versiegelte Produkte (Tins, ETBs, Displays) haben keine Einzelkarten-Preise
     if is_sealed_product and not market and not analysis.get("min_price"):
@@ -1623,6 +1717,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pending_price_id and context.user_data.get("chosen_price") is None:
         try:
             price = float(text.replace(",", ".").replace("€", "").strip())
+            if price < 0:
+                raise ValueError("negativ")
         except ValueError:
             await update.message.reply_text(
                 "Bitte den Kaufpreis als Zahl angeben (z. B. 49.90)."
