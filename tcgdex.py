@@ -72,16 +72,35 @@ def cardmarket_search_url(name: str) -> str:
             f"?searchString={q}&sellerCountry=7")
 
 
-def _cardmarket_product_url(id_product) -> str | None:
-    """Direktlink zur Cardmarket-Produktseite, gefiltert auf 🇩🇪 Verkäufer.
+def _cm_slug(s: str) -> str:
+    """Wandelt einen Namen in einen Cardmarket-URL-Slug um."""
+    # Sonderzeichen ersetzen
+    for src, dst in [("é","e"),("è","e"),("ê","e"),("ë","e"),
+                     ("ä","ae"),("ö","oe"),("ü","ue"),("ß","ss"),
+                     ("'",""),("’",""),("&","-"),(".","")]:
+        s = s.replace(src, dst)
+    s = re.sub(r"[\s_/]+", "-", s.strip())
+    s = re.sub(r"[^\w-]", "", s)
+    s = re.sub(r"-+", "-", s)
+    return s.strip("-")
 
-    sellerCountry=7 = Deutschland. /Singles ist die korrekte CM-Unterseite
-    fuer Einzelkarten — /Products allein landet auf der falschen Kategorie-Seite.
+
+def _cardmarket_product_url(name: str | None, set_name: str | None,
+                            id_product=None) -> str | None:
+    """Direktlink zur Cardmarket-Produktseite.
+
+    Bevorzugt: Slug-URL (/Singles/{Set}/{Karte}) — der einzige funktionierende
+    Direktlink. ?idProduct= ist kein Produktfilter sondern wird von Cardmarket
+    ignoriert und zeigt eine zufällige Seite.
     """
-    if not id_product:
-        return None
-    return (f"https://www.cardmarket.com/de/Pokemon/Products/Singles"
-            f"?idProduct={id_product}&sellerCountry=7")
+    if name and set_name:
+        return (f"https://www.cardmarket.com/de/Pokemon/Products/Singles"
+                f"/{_cm_slug(set_name)}/{_cm_slug(name)}")
+    if name:
+        q = urllib.parse.quote_plus(name)
+        return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
+                f"?searchString={q}&sellerCountry=7")
+    return None
 
 
 def _set_code_variants(code: str) -> list[str]:
@@ -283,8 +302,10 @@ def _build_result(d: dict, name: str) -> dict:
     """Baut das normierte Rückgabe-Dict aus einem TCGdex-Karten-Detail."""
     cm = (d.get("pricing") or {}).get("cardmarket") or {}
     set_obj = d.get("set") or {}
-    link = (_cardmarket_product_url(cm.get("idProduct"))
-            or cardmarket_search_url(d.get("name") or name))
+    card_name = d.get("name") or name
+    set_name = set_obj.get("name")
+    link = (_cardmarket_product_url(card_name, set_name, cm.get("idProduct"))
+            or cardmarket_search_url(card_name))
 
     # TCGPlayer (USD) als Fallback wenn keine CM-Preise
     tcgp = (d.get("pricing") or {}).get("tcgplayer") or {}
