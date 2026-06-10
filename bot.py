@@ -1318,7 +1318,8 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
     # Direkten CM-Slug-URLs (/Singles/...) → in sichere Suche umwandeln
     raw_url = analysis.get("url")
     fallback_name = analysis.get("tcgdex_name") or recog.get("card_name_en") or recog.get("card_name")
-    url = pokeprice._safe_cm_url(raw_url, fallback_name=fallback_name)
+    card_number = (analysis.get("tcgdex_number") or recog.get("card_number") or "").split("/")[0].strip()
+    url = pokeprice._safe_cm_url(raw_url, fallback_name=fallback_name, number=card_number or None)
 
     # Warnung wenn Konfidenz niedrig
     conf_warn = " ⚠️ unsicher" if conf < 70 else ""
