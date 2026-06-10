@@ -77,19 +77,34 @@ def cardmarket_search_url(name: str, number: str | None = None,
             f"?searchString={q}&sellerCountry=7{lang}")
 
 
+_CM_VERSION_RE = re.compile(r"-V\d+-[A-Z]{2,5}\d+")
+
+
 def _safe_cm_url(url: str | None, fallback_name: str | None = None,
                  number: str | None = None) -> str | None:
-    """Wandelt direkte CM-Produkt-URLs (/Singles/...) in Suche mit Name+Nummer um."""
+    """Gibt vollständige CM-Produkt-URLs direkt zurück (mit DE-Filter).
+
+    TCGdex liefert in pricing.cardmarket.url URLs wie:
+      /Singles/Temporal-Forces/Mortys-Conviction-V3-TEF211
+    Diese sind vollständig (enthalten Versionsnummer + Set-Kürzel) und gültig.
+
+    Unvollständige URLs (ohne -Vn-XXXNNN) → Fallback auf Namenssuche.
+    """
     if not url:
         return cardmarket_search_url(fallback_name, number) if fallback_name else None
     if "/Singles/" in url and "searchString" not in url:
+        if _CM_VERSION_RE.search(url):
+            # Vollständige Slug-URL: DE-Filter anhängen und direkt nutzen
+            base = url.split("?")[0]
+            return f"{base}?sellerCountry=7&language=3"
+        # Unvollständige URL (kein Versionssuffix) → Suche
         return cardmarket_search_url(fallback_name, number) if fallback_name else None
     return url
 
 
 def _cardmarket_product_url(name: str | None, set_name: str | None,
                             id_product=None, number: str | None = None) -> str | None:
-    """Cardmarket-Suche nach Kartenname + Nummer (ohne Set-Namen)."""
+    """Fallback: Cardmarket-Suche nach Kartenname + Nummer."""
     if not name:
         return None
     return cardmarket_search_url(name, number)
@@ -297,9 +312,9 @@ def _build_result(d: dict, name: str) -> dict:
     card_name = d.get("name") or name
     set_name = set_obj.get("name")
     local_id = d.get("localId")
-    # cm.get("url") von TCGdex sind direkte Slugs → immer durch Search ersetzen
+    # TCGdex-URL bevorzugen (vollständige Slugs mit -Vn-XXXNNN); Fallback: Suche
     link = _safe_cm_url(
-        _cardmarket_product_url(card_name, set_name, cm.get("idProduct"), number=local_id),
+        cm.get("url") or _cardmarket_product_url(card_name, set_name, cm.get("idProduct"), number=local_id),
         fallback_name=card_name,
         number=local_id,
     )
