@@ -74,19 +74,15 @@ def cardmarket_search_url(name: str) -> str:
 
 def _cardmarket_product_url(name: str | None, set_name: str | None,
                             id_product=None) -> str | None:
-    """Gezielte Cardmarket-Suche nach Name + Set.
+    """Cardmarket-Suche nach Kartenname (ohne Set-Namen).
 
-    Cardmarket-Direktlinks brauchen interne Slugs (z.B. Charizard-ex-V1-OBF125)
-    die wir aus den Kartendaten nicht zuverlässig ableiten können.
-    Deshalb: gezielte Suche mit Name + Set — zeigt genau die richtige Karte.
+    Set-Namen von TCGdex sind englisch, CM erwartet deutsch → Suche schlägt fehl.
+    Nur der Kartenname liefert zuverlässig Treffer.
     """
     if not name:
         return None
-    q = name
-    if set_name:
-        q = f"{name} {set_name}"
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-            f"?searchString={urllib.parse.quote_plus(q)}&sellerCountry=7")
+            f"?searchString={urllib.parse.quote_plus(name)}&sellerCountry=7")
 
 
 def _set_code_variants(code: str) -> list[str]:

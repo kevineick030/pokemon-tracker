@@ -1122,8 +1122,7 @@ def _pokeprice_analysis(recog: dict) -> dict:
         info["avg30"] = po_card.get("avg30")
         info["source"] = "pokemontcg"
         info["trend"] = pokeprice.trend_from_prices(po_card)
-        if po_card.get("url"):
-            info["url"] = po_card["url"]
+        # pokemontcg.io-URLs sind direkte CM-Slugs → oft falsch, search_url ist zuverlässiger
         return info
 
     # 4) Letzter Fallback: TCGPlayer (USD)
