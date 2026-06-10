@@ -65,14 +65,16 @@ def _set_match(a: str | None, b: str | None) -> bool:
     return a in b or b in a or bool(set(a.split()) & set(b.split()) - {"in", "und", "der", "die"})
 
 
-def cardmarket_search_url(name: str, number: str | None = None) -> str:
-    """Cardmarket-Suche gefiltert auf deutsche Verkäufer.
+def cardmarket_search_url(name: str, number: str | None = None,
+                          language_id: int | None = 3) -> str:
+    """Cardmarket-Suche gefiltert auf deutsche Verkäufer + deutsche Karten.
 
-    Mit number (z.B. '119') wird die Suche auf genau diese Karte eingeschränkt.
+    language_id: 3=DE (Standard), 1=EN, 7=JP, None=kein Filter
     """
     q = urllib.parse.quote_plus((f"{name} {number}" if number else name) or "")
+    lang = f"&language={language_id}" if language_id else ""
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-            f"?searchString={q}&sellerCountry=7")
+            f"?searchString={q}&sellerCountry=7{lang}")
 
 
 def _safe_cm_url(url: str | None, fallback_name: str | None = None,

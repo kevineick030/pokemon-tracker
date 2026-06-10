@@ -985,14 +985,12 @@ def _cardmarket_url_for_card(name: str, set_name: str | None = None,
     if url_from_card:
         return url_from_card
 
-    is_jp = (language or "").upper() == "JP"
-    if is_jp and name:
-        # Cardmarket: languageName=Japanese filtert auf JP-Karten
-        import urllib.parse
-        q = urllib.parse.quote_plus(name)
-        return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-                f"?searchString={q}&language=7&sellerCountry=7")
-    return pokeprice.cardmarket_search_url(name or "")
+    lang = (language or "").upper()
+    if lang == "JP":
+        return pokeprice.cardmarket_search_url(name or "", language_id=7)
+    if lang == "EN":
+        return pokeprice.cardmarket_search_url(name or "", language_id=1)
+    return pokeprice.cardmarket_search_url(name or "", language_id=3)  # DE default
 
 
 def _best_lookup(names: list, set_name=None, number=None, rarity=None, language=None):
