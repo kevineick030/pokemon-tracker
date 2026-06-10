@@ -65,34 +65,32 @@ def _set_match(a: str | None, b: str | None) -> bool:
     return a in b or b in a or bool(set(a.split()) & set(b.split()) - {"in", "und", "der", "die"})
 
 
-def cardmarket_search_url(name: str) -> str:
-    """Cardmarket-Suche gefiltert auf deutsche Verkäufer (sellerCountry=7)."""
-    q = urllib.parse.quote_plus(name or "")
+def cardmarket_search_url(name: str, number: str | None = None) -> str:
+    """Cardmarket-Suche gefiltert auf deutsche Verkäufer.
+
+    Mit number (z.B. '119') wird die Suche auf genau diese Karte eingeschränkt.
+    """
+    q = urllib.parse.quote_plus((f"{name} {number}" if number else name) or "")
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
             f"?searchString={q}&sellerCountry=7")
 
 
-def _safe_cm_url(url: str | None, fallback_name: str | None = None) -> str | None:
-    """Wandelt direkte CM-Produkt-URLs (/Singles/...) in Suche um.
-
-    TCGdex liefert in pricing.cardmarket.url direkte Slug-URLs wie
-    /Singles/Wachsendes-Chaos/Chillabell-ex — diese führen zu
-    'Ungültiges Produkt' wenn der Slug nicht exakt stimmt.
-    """
+def _safe_cm_url(url: str | None, fallback_name: str | None = None,
+                 number: str | None = None) -> str | None:
+    """Wandelt direkte CM-Produkt-URLs (/Singles/...) in Suche mit Name+Nummer um."""
     if not url:
-        return cardmarket_search_url(fallback_name) if fallback_name else None
+        return cardmarket_search_url(fallback_name, number) if fallback_name else None
     if "/Singles/" in url and "searchString" not in url:
-        return cardmarket_search_url(fallback_name) if fallback_name else None
+        return cardmarket_search_url(fallback_name, number) if fallback_name else None
     return url
 
 
 def _cardmarket_product_url(name: str | None, set_name: str | None,
-                            id_product=None) -> str | None:
-    """Cardmarket-Suche nach Kartenname (ohne Set-Namen)."""
+                            id_product=None, number: str | None = None) -> str | None:
+    """Cardmarket-Suche nach Kartenname + Nummer (ohne Set-Namen)."""
     if not name:
         return None
-    return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-            f"?searchString={urllib.parse.quote_plus(name)}&sellerCountry=7")
+    return cardmarket_search_url(name, number)
 
 
 def _set_code_variants(code: str) -> list[str]:
@@ -296,10 +294,12 @@ def _build_result(d: dict, name: str) -> dict:
     set_obj = d.get("set") or {}
     card_name = d.get("name") or name
     set_name = set_obj.get("name")
+    local_id = d.get("localId")
     # cm.get("url") von TCGdex sind direkte Slugs → immer durch Search ersetzen
     link = _safe_cm_url(
-        _cardmarket_product_url(card_name, set_name, cm.get("idProduct")),
+        _cardmarket_product_url(card_name, set_name, cm.get("idProduct"), number=local_id),
         fallback_name=card_name,
+        number=local_id,
     )
 
     # TCGPlayer (USD) als Fallback wenn keine CM-Preise
