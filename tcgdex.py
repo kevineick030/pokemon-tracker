@@ -72,13 +72,23 @@ def cardmarket_search_url(name: str) -> str:
             f"?searchString={q}&sellerCountry=7")
 
 
+def _safe_cm_url(url: str | None, fallback_name: str | None = None) -> str | None:
+    """Wandelt direkte CM-Produkt-URLs (/Singles/...) in Suche um.
+
+    TCGdex liefert in pricing.cardmarket.url direkte Slug-URLs wie
+    /Singles/Wachsendes-Chaos/Chillabell-ex — diese führen zu
+    'Ungültiges Produkt' wenn der Slug nicht exakt stimmt.
+    """
+    if not url:
+        return cardmarket_search_url(fallback_name) if fallback_name else None
+    if "/Singles/" in url and "searchString" not in url:
+        return cardmarket_search_url(fallback_name) if fallback_name else None
+    return url
+
+
 def _cardmarket_product_url(name: str | None, set_name: str | None,
                             id_product=None) -> str | None:
-    """Cardmarket-Suche nach Kartenname (ohne Set-Namen).
-
-    Set-Namen von TCGdex sind englisch, CM erwartet deutsch → Suche schlägt fehl.
-    Nur der Kartenname liefert zuverlässig Treffer.
-    """
+    """Cardmarket-Suche nach Kartenname (ohne Set-Namen)."""
     if not name:
         return None
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
@@ -286,8 +296,11 @@ def _build_result(d: dict, name: str) -> dict:
     set_obj = d.get("set") or {}
     card_name = d.get("name") or name
     set_name = set_obj.get("name")
-    link = (_cardmarket_product_url(card_name, set_name, cm.get("idProduct"))
-            or cardmarket_search_url(card_name))
+    # cm.get("url") von TCGdex sind direkte Slugs → immer durch Search ersetzen
+    link = _safe_cm_url(
+        _cardmarket_product_url(card_name, set_name, cm.get("idProduct")),
+        fallback_name=card_name,
+    )
 
     # TCGPlayer (USD) als Fallback wenn keine CM-Preise
     tcgp = (d.get("pricing") or {}).get("tcgplayer") or {}

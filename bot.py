@@ -1315,7 +1315,10 @@ def _format_recognition(recog: dict, analysis: dict) -> str:
     if image_recognition.is_sealed(recog.get("product_type")):
         sealed_line = f"📦 Versiegeltes Produkt: {recog.get('product_type')}\n"
 
-    url = analysis.get("url")
+    # Direkten CM-Slug-URLs (/Singles/...) → in sichere Suche umwandeln
+    raw_url = analysis.get("url")
+    fallback_name = analysis.get("tcgdex_name") or recog.get("card_name_en") or recog.get("card_name")
+    url = pokeprice._safe_cm_url(raw_url, fallback_name=fallback_name)
 
     # Warnung wenn Konfidenz niedrig
     conf_warn = " ⚠️ unsicher" if conf < 70 else ""
