@@ -17,19 +17,17 @@ log = logging.getLogger(__name__)
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
 TIMEOUT = 20
-REQUEST_DELAY = 0.2  # Sekunden zwischen TCGdex-Requests
+REQUEST_DELAY = 0.5  # Sekunden zwischen TCGdex-Requests (Rate-Limit vermeiden)
 
-# Schlüsselwörter zum Filtern der TCGdex-Rarity-Liste (case-insensitive)
+# Nur die wirklich wertvollen Karten — SIR, IR, Hyper Rare
+# Ultra Rare / Double Rare haben hunderte Karten (ex-Karten) → Rate-Limit-Gefahr
 TARGET_RARITY_KEYWORDS = [
     "special illustration",
     "illustration rare",
     "hyper rare",
-    "secret rare",
-    "shiny rare",
-    "shiny ultra rare",
-    "ultra rare",
-    "double rare",
 ]
+
+MAX_DETAIL_CALLS_PER_RARITY = 300  # Sicherheitslimit
 
 MIN_TREND_EUR = 8.0
 MIN_DISCOUNT_PCT = 15.0
@@ -107,6 +105,7 @@ def refresh_sir_ir_cache() -> int:
         total_found += len(cards)
         time.sleep(REQUEST_DELAY)
 
+        detail_calls = 0
         for card in cards:
             card_id = card.get("id") or ""
             number = str(card.get("localId") or "")
@@ -123,9 +122,15 @@ def refresh_sir_ir_cache() -> int:
             if db.sir_ir_card_exists(set_id, number):
                 continue
 
-            detail = _get_card_detail_by_id(card_id)
+            if detail_calls >= MAX_DETAIL_CALLS_PER_RARITY:
+                log.warning("Rarity '%s': Detail-Limit erreicht, Rest übersprungen.", rarity)
+                break
+
             time.sleep(REQUEST_DELAY)
+            detail = _get_card_detail_by_id(card_id)
+            detail_calls += 1
             if not detail:
+                log.debug("Detail fuer %s nicht ladbar.", card_id)
                 continue
 
             cm = (detail.get("pricing") or {}).get("cardmarket") or {}
