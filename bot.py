@@ -724,6 +724,9 @@ async def cmd_deals_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     lines.append(f"Anzahl Karten: {len(data)}")
                     if data:
                         lines.append(f"Erstes Element: {str(data[0])[:300]}")
+                elif isinstance(data, dict):
+                    lines.append(f"Dict-Keys: {list(data.keys())}")
+                    lines.append(f"Inhalt (gekürzt): {str(data)[:400]}")
             else:
                 lines.append(f"Body: {r.text[:200]}")
         except Exception as e:
