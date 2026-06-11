@@ -655,15 +655,8 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import asyncio, deal_scanner
     loop = asyncio.get_running_loop()
     cache_count = db.sir_ir_cache_count()
-    if cache_count == 0:
-        await update.message.reply_text(
-            "⏳ SIR/IR-Datenbank noch leer.\n"
-            "Nutze /deals_refresh um sie jetzt aufzubauen (dauert 3-5 Min)."
-        )
-        return
-    msg_loading = await update.message.reply_text(
-        f"🔍 Suche Deals in {cache_count} SIR/IR-Karten …"
-    )
+    hint = f"{cache_count} gecachten SIR/IR-Karten" if cache_count > 0 else "CM Price Guide (75k Produkte)"
+    msg_loading = await update.message.reply_text(f"🔍 Suche Deals in {hint} …")
     deals = await loop.run_in_executor(None, deal_scanner.get_deals)
     text = deal_scanner.format_deals_message(deals)
     await msg_loading.edit_text(text, parse_mode=ParseMode.MARKDOWN,
