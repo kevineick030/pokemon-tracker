@@ -655,7 +655,7 @@ async def cmd_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import asyncio, deal_scanner
     loop = asyncio.get_running_loop()
     cache_count = db.sir_ir_cache_count()
-    hint = f"{cache_count} gecachten SIR/IR-Karten" if cache_count > 0 else "CM Price Guide (75k Produkte)"
+    hint = f"{cache_count} SIR/IR-Karten" if cache_count > 0 else "Cache wird geprüft"
     msg_loading = await update.message.reply_text(f"🔍 Suche Deals in {hint} …")
     deals = await loop.run_in_executor(None, deal_scanner.get_deals)
     text = deal_scanner.format_deals_message(deals)
@@ -672,7 +672,7 @@ async def cmd_deals_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cache_before = db.sir_ir_cache_count()
     status = await update.message.reply_text(
         "🔄 SIR/IR-Datenbank wird aufgebaut …\n"
-        "_(Das dauert 3-5 Minuten — TCGdex wird nach allen aktuellen Sets durchsucht)_",
+        "_(Lädt SIR/IR/Hyper Rare direkt per Rarity-Endpunkt — dauert ca. 2-5 Min)_",
         parse_mode=ParseMode.MARKDOWN,
     )
     added = await loop.run_in_executor(None, deal_scanner.refresh_sir_ir_cache)

@@ -1,13 +1,14 @@
 """Deal-Scanner: Taeglich SIR/IR-Karten unter Marktwert finden.
 
 Ablauf (taeglich 06:05, nach Price-Guide-Download):
-  1. TCGdex: Alle SIR/IR-Karten aus aktuellen Sets cachen (idProduct + Name)
+  1. TCGdex: SIR/IR-Karten direkt per Rarity-Endpunkt cachen (idProduct + Name)
   2. CM Price Guide: low vs. trend vergleichen fuer gecachte Karten
   3. Top-Deals als Telegram-Nachricht senden
   4. Watchlist-Karten pruefen → Alerts wenn Preis unter Schwelle gefallen
 """
 import logging
 import time
+import urllib.parse
 import requests
 import cm_priceguide
 import database as db
@@ -15,56 +16,40 @@ import database as db
 log = logging.getLogger(__name__)
 
 TCGDEX_BASE = "https://api.tcgdex.net/v2"
-TIMEOUT = 15
-REQUEST_DELAY = 0.15  # Sekunden zwischen TCGdex-Requests
+TIMEOUT = 20
+REQUEST_DELAY = 0.2  # Sekunden zwischen TCGdex-Requests
 
-TARGET_RARITIES = {
-    "special illustration rare",
-    "illustration rare",
-    "hyper rare",
-    "secret rare",
-    "shiny rare",
-    "shiny ultra rare",
-    "ultra rare",
-    "double rare",
-}
+# Exakte Rarity-Namen wie TCGdex sie nennt (case-insensitive match beim Lookup)
+TARGET_RARITIES_TCGDEX = [
+    "Special Illustration Rare",
+    "Illustration Rare",
+    "Hyper Rare",
+    "Secret Rare",
+    "Shiny Rare",
+    "Shiny Ultra Rare",
+    "Ultra Rare",
+    "Double Rare",
+]
 
 MIN_TREND_EUR = 8.0
 MIN_DISCOUNT_PCT = 15.0
 
 
-def _is_target_rarity(rarity: str | None) -> bool:
-    if not rarity:
-        return False
-    r = rarity.lower()
-    return any(t in r for t in TARGET_RARITIES)
-
-
-def _get_sets_since(year: int = 2022) -> list[dict]:
+def _get_cards_by_rarity(rarity: str) -> list[dict]:
+    """Holt alle Karten einer Rarity direkt vom TCGdex-Rarity-Endpunkt."""
+    encoded = urllib.parse.quote(rarity, safe="")
     try:
-        resp = requests.get(f"{TCGDEX_BASE}/en/sets", timeout=TIMEOUT)
-        resp.raise_for_status()
-        result = []
-        for s in resp.json():
-            release = s.get("releaseDate", "")
-            y = int(release[:4]) if len(release) >= 4 and release[:4].isdigit() else 0
-            if y >= year:
-                result.append(s)
-        log.info("TCGdex: %d Sets seit %d gefunden.", len(result), year)
-        return result
-    except Exception:
-        log.exception("TCGdex Sets konnten nicht geladen werden")
-        return []
-
-
-def _get_set_cards(set_id: str) -> list[dict]:
-    try:
-        resp = requests.get(f"{TCGDEX_BASE}/en/sets/{set_id}", timeout=TIMEOUT)
+        resp = requests.get(f"{TCGDEX_BASE}/en/rarities/{encoded}", timeout=TIMEOUT)
         if resp.status_code != 200:
+            log.warning("TCGdex Rarity '%s' → HTTP %d", rarity, resp.status_code)
             return []
-        return resp.json().get("cards", [])
+        data = resp.json()
+        if not isinstance(data, list):
+            log.warning("TCGdex Rarity '%s' → unerwartetes Format", rarity)
+            return []
+        return data
     except Exception:
-        log.warning("TCGdex Set %s nicht ladbar", set_id)
+        log.exception("TCGdex Rarity '%s' nicht ladbar", rarity)
         return []
 
 
@@ -81,28 +66,29 @@ def _get_card_detail(set_id: str, number: str) -> dict | None:
 
 
 def refresh_sir_ir_cache() -> int:
-    """Scannt TCGdex auf SIR/IR-Karten und cached idProduct in der DB.
+    """Cached SIR/IR-Karten per TCGdex-Rarity-Endpunkte.
 
-    Bereits bekannte Karten (set_id + number in DB) werden uebersprungen,
-    sodass Folgelaeufe nur neue Karten nachladen.
+    Effizienter als Set-Scan: nur die Karten werden geladen die tatsaechlich
+    die Ziel-Rarities haben. Ueberspringt bereits gecachte Karten.
     Gibt Anzahl neu hinzugefuegter Karten zurueck.
     """
-    sets = _get_sets_since(year=2022)
     added = 0
+    total_found = 0
 
-    for s in sets:
-        set_id = s.get("id")
-        if not set_id:
-            continue
-
-        cards = _get_set_cards(set_id)
+    for rarity in TARGET_RARITIES_TCGDEX:
+        cards = _get_cards_by_rarity(rarity)
+        log.info("TCGdex Rarity '%s' → %d Karten gefunden", rarity, len(cards))
+        total_found += len(cards)
         time.sleep(REQUEST_DELAY)
 
         for card in cards:
-            number = str(card.get("localId") or card.get("number") or "")
-            if not number:
-                continue
+            set_info = card.get("set") or {}
+            set_id = set_info.get("id") or ""
+            set_name = set_info.get("name") or set_id
+            number = str(card.get("localId") or "")
 
+            if not set_id or not number:
+                continue
             if db.sir_ir_card_exists(set_id, number):
                 continue
 
@@ -111,12 +97,6 @@ def refresh_sir_ir_cache() -> int:
             if not detail:
                 continue
 
-            # Rarität aus dem Detail-Objekt prüfen (set-Endpoint liefert sie oft nicht)
-            rarity = detail.get("rarity") or card.get("rarity") or ""
-            if not _is_target_rarity(rarity):
-                continue
-
-            # idProduct liegt verschachtelt unter pricing.cardmarket
             cm = (detail.get("pricing") or {}).get("cardmarket") or {}
             id_product = cm.get("idProduct")
             if not id_product:
@@ -125,7 +105,7 @@ def refresh_sir_ir_cache() -> int:
             db.upsert_sir_ir_card(
                 id_product=int(id_product),
                 name=detail.get("name") or card.get("name") or "",
-                set_name=s.get("name", set_id),
+                set_name=set_name,
                 set_id=set_id,
                 number=number,
                 rarity=rarity,
@@ -133,29 +113,21 @@ def refresh_sir_ir_cache() -> int:
             )
             added += 1
 
-    log.info("SIR/IR-Cache: %d neue Karten hinzugefuegt.", added)
+    log.info(
+        "SIR/IR-Cache: %d Karten geprueft, %d neu hinzugefuegt.", total_found, added
+    )
     return added
 
 
 def get_deals(min_discount_pct: float = MIN_DISCOUNT_PCT,
               min_trend_eur: float = MIN_TREND_EUR,
               limit: int = 10) -> list[dict]:
-    """Findet Karten mit aktuellem Angebot deutlich unter Marktwert.
-
-    Zuerst aus dem SIR/IR-Cache (mit Namen + Rarität).
-    Fallback: direkt aus dem CM Price Guide (nur Preise, kein Name).
-    """
+    """Findet SIR/IR-Karten mit aktuellem Angebot deutlich unter Marktwert."""
     if not cm_priceguide.is_ready():
         log.warning("CM Price Guide noch nicht geladen, keine Deals.")
         return []
 
     rows = db.get_sir_ir_deals(min_discount_pct, min_trend_eur, limit)
-    if rows:
-        return [dict(r) for r in rows]
-
-    # Fallback: direkt aus Price Guide (wenn SIR/IR-Cache leer)
-    log.info("SIR/IR-Cache leer, nutze direkte Price-Guide-Suche als Fallback.")
-    rows = db.get_priceguide_deals(min_discount_pct, min_trend_eur, limit)
     return [dict(r) for r in rows]
 
 
@@ -211,6 +183,13 @@ def check_watchlist_alerts() -> list[str]:
 
 def format_deals_message(deals: list[dict]) -> str:
     if not deals:
+        cache = db.sir_ir_cache_count()
+        if cache == 0:
+            return (
+                "📭 *Keine SIR/IR-Karten im Cache*\n\n"
+                "Nutze /deals_refresh um den Cache jetzt aufzubauen (dauert ca. 5 Min).\n"
+                "Danach zeigt /deals echte Deals mit Namen und Links."
+            )
         return (
             "📊 *Keine SIR/IR-Deals heute*\n\n"
             "Alle Karten liegen nahe am Marktwert. Morgen wieder pruefen!"
