@@ -19,24 +19,45 @@ TCGDEX_BASE = "https://api.tcgdex.net/v2"
 TIMEOUT = 20
 REQUEST_DELAY = 0.2  # Sekunden zwischen TCGdex-Requests
 
-# Exakte Rarity-Namen wie TCGdex sie nennt (case-insensitive match beim Lookup)
-TARGET_RARITIES_TCGDEX = [
-    "Special Illustration Rare",
-    "Illustration Rare",
-    "Hyper Rare",
-    "Secret Rare",
-    "Shiny Rare",
-    "Shiny Ultra Rare",
-    "Ultra Rare",
-    "Double Rare",
+# Schlüsselwörter zum Filtern der TCGdex-Rarity-Liste (case-insensitive)
+TARGET_RARITY_KEYWORDS = [
+    "special illustration",
+    "illustration rare",
+    "hyper rare",
+    "secret rare",
+    "shiny rare",
+    "shiny ultra rare",
+    "ultra rare",
+    "double rare",
 ]
 
 MIN_TREND_EUR = 8.0
 MIN_DISCOUNT_PCT = 15.0
 
 
+def _get_target_rarities() -> list[str]:
+    """Holt alle TCGdex-Rarity-Namen und filtert auf Ziel-Rarities."""
+    try:
+        resp = requests.get(f"{TCGDEX_BASE}/en/rarities", timeout=TIMEOUT)
+        if resp.status_code != 200:
+            log.warning("TCGdex /rarities → HTTP %d", resp.status_code)
+            return []
+        all_rarities = resp.json()
+        if not isinstance(all_rarities, list):
+            return []
+        matched = [
+            r for r in all_rarities
+            if any(kw in r.lower() for kw in TARGET_RARITY_KEYWORDS)
+        ]
+        log.info("TCGdex: %d passende Rarities gefunden: %s", len(matched), matched)
+        return matched
+    except Exception:
+        log.exception("TCGdex Rarities-Liste nicht ladbar")
+        return []
+
+
 def _get_cards_by_rarity(rarity: str) -> list[dict]:
-    """Holt alle Karten einer Rarity direkt vom TCGdex-Rarity-Endpunkt."""
+    """Holt alle Karten einer Rarity. Antwort kann List oder Dict mit 'cards'-Key sein."""
     encoded = urllib.parse.quote(rarity, safe="")
     try:
         resp = requests.get(f"{TCGDEX_BASE}/en/rarities/{encoded}", timeout=TIMEOUT)
@@ -44,20 +65,20 @@ def _get_cards_by_rarity(rarity: str) -> list[dict]:
             log.warning("TCGdex Rarity '%s' → HTTP %d", rarity, resp.status_code)
             return []
         data = resp.json()
-        if not isinstance(data, list):
-            log.warning("TCGdex Rarity '%s' → unerwartetes Format", rarity)
-            return []
-        return data
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("cards") or []
+        return []
     except Exception:
         log.exception("TCGdex Rarity '%s' nicht ladbar", rarity)
         return []
 
 
-def _get_card_detail(set_id: str, number: str) -> dict | None:
+def _get_card_detail_by_id(card_id: str) -> dict | None:
+    """Holt Karten-Detail per vollstaendiger Karten-ID (z.B. 'sv06.5-090')."""
     try:
-        resp = requests.get(
-            f"{TCGDEX_BASE}/en/cards/{set_id}-{number}", timeout=TIMEOUT
-        )
+        resp = requests.get(f"{TCGDEX_BASE}/en/cards/{card_id}", timeout=TIMEOUT)
         if resp.status_code != 200:
             return None
         return resp.json()
@@ -68,31 +89,41 @@ def _get_card_detail(set_id: str, number: str) -> dict | None:
 def refresh_sir_ir_cache() -> int:
     """Cached SIR/IR-Karten per TCGdex-Rarity-Endpunkte.
 
-    Effizienter als Set-Scan: nur die Karten werden geladen die tatsaechlich
-    die Ziel-Rarities haben. Ueberspringt bereits gecachte Karten.
+    Holt zuerst die exakten Rarity-Namen von TCGdex, dann alle Karten
+    je Rarity. Ueberspringt bereits gecachte Karten.
     Gibt Anzahl neu hinzugefuegter Karten zurueck.
     """
+    rarities = _get_target_rarities()
+    if not rarities:
+        log.warning("Keine Ziel-Rarities gefunden — Refresh abgebrochen.")
+        return 0
+
     added = 0
     total_found = 0
 
-    for rarity in TARGET_RARITIES_TCGDEX:
+    for rarity in rarities:
         cards = _get_cards_by_rarity(rarity)
-        log.info("TCGdex Rarity '%s' → %d Karten gefunden", rarity, len(cards))
+        log.info("TCGdex Rarity '%s' → %d Karten", rarity, len(cards))
         total_found += len(cards)
         time.sleep(REQUEST_DELAY)
 
         for card in cards:
-            set_info = card.get("set") or {}
-            set_id = set_info.get("id") or ""
-            set_name = set_info.get("name") or set_id
+            card_id = card.get("id") or ""
             number = str(card.get("localId") or "")
+            card_name = card.get("name") or ""
 
-            if not set_id or not number:
+            if not card_id or not number:
                 continue
+
+            # set_id aus card_id ableiten: "sv06.5-090" → set_id="sv06.5"
+            set_id = card_id[: -(len(number) + 1)] if card_id.endswith(f"-{number}") else ""
+            if not set_id:
+                continue
+
             if db.sir_ir_card_exists(set_id, number):
                 continue
 
-            detail = _get_card_detail(set_id, number)
+            detail = _get_card_detail_by_id(card_id)
             time.sleep(REQUEST_DELAY)
             if not detail:
                 continue
@@ -102,10 +133,11 @@ def refresh_sir_ir_cache() -> int:
             if not id_product:
                 continue
 
+            set_info = detail.get("set") or {}
             db.upsert_sir_ir_card(
                 id_product=int(id_product),
-                name=detail.get("name") or card.get("name") or "",
-                set_name=set_name,
+                name=detail.get("name") or card_name,
+                set_name=set_info.get("name") or set_id,
                 set_id=set_id,
                 number=number,
                 rarity=rarity,
@@ -113,9 +145,7 @@ def refresh_sir_ir_cache() -> int:
             )
             added += 1
 
-    log.info(
-        "SIR/IR-Cache: %d Karten geprueft, %d neu hinzugefuegt.", total_found, added
-    )
+    log.info("SIR/IR-Cache: %d Karten geprueft, %d neu hinzugefuegt.", total_found, added)
     return added
 
 
