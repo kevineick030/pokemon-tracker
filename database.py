@@ -916,8 +916,10 @@ def get_sir_ir_deals(min_discount_pct: float, min_trend_eur: float,
             FROM sir_ir_cards s
             JOIN cm_price_guide c ON c.id_product = s.id_product
             WHERE c.trend >= ?
-              AND c.low > 0
+              AND c.low >= 0.5
+              AND c.avg7 >= 5.0
               AND c.trend > c.low
+              AND c.avg7 > c.low
               AND (c.trend - c.low) / c.trend * 100 >= ?
             ORDER BY discount_pct DESC
             LIMIT ?
@@ -941,8 +943,10 @@ def get_priceguide_deals(min_discount_pct: float, min_trend_eur: float,
                    ROUND((trend - low) / trend * 100, 1) AS discount_pct
             FROM cm_price_guide
             WHERE trend >= ?
-              AND low > 0
+              AND low >= 0.5
+              AND avg7 >= 5.0
               AND trend > low
+              AND avg7 > low
               AND (trend - low) / trend * 100 >= ?
             ORDER BY discount_pct DESC
             LIMIT ?
