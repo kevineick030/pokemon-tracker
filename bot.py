@@ -919,6 +919,7 @@ _ACTION_BUTTONS = {
     "collect": ("✅ Sammlung", "pc:collect"),
     "price":   ("💰 Preis-Check", "pc:price"),
     "watch":   ("🔔 Watchlist", "pc:watch"),
+    "buy":     ("💡 Kauf-Check", "pc:buy"),
     "scalp":   ("💼 Scalp-Track", "pc:scalp"),
 }
 
@@ -1617,7 +1618,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- ✅ Bestätigung: Erkennung korrekt → Aktions-Buttons zeigen ---
     if data == "pc:confirm":
-        keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
+        keyboard = _build_action_keyboard(["collect", "watch", "buy", "scalp"], is_sealed)
         await query.edit_message_reply_markup(reply_markup=keyboard)
         return
 
@@ -1628,6 +1629,20 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "❌ Wie heißt die Karte oder das Produkt?\n"
             "Gib den Namen ein (z.B. Pikachu ex oder Scarlet & Violet ETB):"
+        )
+        return
+
+    # --- 💡 Kauf-Check: User gibt Preis ein → Bot empfiehlt kaufen/skip ---
+    if data == "pc:buy":
+        context.user_data["awaiting_buy_check"] = True
+        await _disable_buttons(query)
+        trend = analysis.get("trend") or 0
+        trend_txt = f" (Marktpreis: {trend:.0f}€)" if trend > 0 else ""
+        await query.message.reply_text(
+            f"💡 *Kauf-Check*{trend_txt}\n\n"
+            "Für wieviel € würdest du die Karte kaufen?\n"
+            "Einfach den Preis eingeben, z.B. `12.50`",
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
 
@@ -1786,7 +1801,57 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 1) Kaufpreis nach "Sammlung" — Texteingabe (wenn "Anderen Preis eingeben" gewählt)
+    # 1) Kauf-Check: Preis eingeben → Empfehlung
+    if context.user_data.get("awaiting_buy_check"):
+        context.user_data.pop("awaiting_buy_check", None)
+        try:
+            pay = float(text.replace(",", ".").replace("€", "").strip())
+            if pay <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("Bitte einen gültigen Preis eingeben, z.B. `12.50`.")
+            context.user_data["awaiting_buy_check"] = True
+            return
+        pending = context.user_data.get("pending_card") or {}
+        analysis_data = pending.get("analysis") or {}
+        trend = analysis_data.get("trend") or 0
+        low = analysis_data.get("market_price") or analysis_data.get("low") or 0
+        if trend > 0:
+            savings_pct = (trend - pay) / trend * 100
+            if pay > trend * 1.05:
+                verdict = "❌ *SKIP* — Zu teuer!"
+                detail = f"Du zahlst {abs(savings_pct):.0f}% *über* Marktpreis."
+            elif pay > trend:
+                verdict = "⚠️ *EHER SKIP* — leicht über Markt."
+                detail = f"Nur {abs(savings_pct):.0f}% über Marktpreis, aber kein Schnäppchen."
+            elif savings_pct < 5:
+                verdict = "🤔 *GRENZWERTIG* — ungefähr Marktpreis."
+                detail = "Kein Schnäppchen, aber auch nicht zu teuer."
+            elif savings_pct < 15:
+                verdict = "✅ *OKAY* — leicht unter Markt."
+                detail = f"Du sparst {savings_pct:.0f}% gegenüber dem Marktpreis."
+            elif savings_pct < 30:
+                verdict = "✅ *KAUFEN* — guter Deal!"
+                detail = f"Du sparst {savings_pct:.0f}% — deutlich unter Marktpreis."
+            else:
+                verdict = "🔥 *KAUFEN* — sehr guter Deal!"
+                detail = f"Du sparst {savings_pct:.0f}% — deutlich unter Marktpreis!"
+            low_txt = f"\nGünstigstes EU-Angebot: {low:.2f}€" if low > 0 else ""
+            await update.message.reply_text(
+                f"💡 *Kauf-Check*\n\n"
+                f"Dein Preis: *{pay:.2f}€*\n"
+                f"Marktpreis (Trend): *{trend:.2f}€*{low_txt}\n\n"
+                f"{verdict}\n{detail}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text(
+                f"💡 Dein Preis: {pay:.2f}€\n"
+                "Kein Marktpreis verfügbar — Vergleich nicht möglich."
+            )
+        return
+
+    # 2) Kaufpreis nach "Sammlung" — Texteingabe (wenn "Anderen Preis eingeben" gewählt)
     pending_price_id = context.user_data.get("awaiting_price")
     if pending_price_id and context.user_data.get("chosen_price") is None:
         try:
