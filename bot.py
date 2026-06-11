@@ -692,45 +692,54 @@ async def cmd_deals_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Zeigt was TCGdex Rarity-Endpunkt tatsaechlich liefert."""
     if not _authorized(update):
         return
-    import asyncio, requests as req
+    import asyncio, requests as req, urllib.parse
     BASE = "https://api.tcgdex.net/v2"
+    TARGET_KEYWORDS = ["special illustration", "illustration rare", "hyper rare",
+                       "secret rare", "shiny", "ultra rare", "double rare"]
 
     def _debug():
         lines = []
-        # 1. Rarities-Liste
+
+        # 1. Rarities-Liste + Keyword-Matching
         try:
             r = req.get(f"{BASE}/en/rarities", timeout=15)
             lines.append(f"GET /rarities → HTTP {r.status_code}")
-            if r.status_code == 200:
-                data = r.json()
-                lines.append(f"Typ: {type(data).__name__}, Einträge: {len(data) if isinstance(data, list) else '?'}")
-                if isinstance(data, list):
-                    lines.append("Erste 5: " + str(data[:5]))
+            all_rarities = r.json() if r.status_code == 200 else []
+            matched = [x for x in all_rarities if any(k in x.lower() for k in TARGET_KEYWORDS)]
+            lines.append(f"Gesamt: {len(all_rarities)}, Passend: {len(matched)}")
+            lines.append(f"Matched: {matched}")
         except Exception as e:
-            lines.append(f"Rarities-Liste Fehler: {e}")
+            lines.append(f"Rarities Fehler: {e}")
+            matched = []
 
-        # 2. SIR direkt
-        import urllib.parse
-        rarity = "Special Illustration Rare"
-        encoded = urllib.parse.quote(rarity, safe="")
-        url = f"{BASE}/en/rarities/{encoded}"
-        try:
-            r = req.get(url, timeout=15)
-            lines.append(f"\nGET /rarities/SIR → HTTP {r.status_code}")
-            if r.status_code == 200:
+        # 2. Erste passende Rarity → erste Karte → Detail
+        if matched:
+            rarity = matched[0]
+            encoded = urllib.parse.quote(rarity, safe="")
+            try:
+                r = req.get(f"{BASE}/en/rarities/{encoded}", timeout=15)
+                lines.append(f"\nGET /rarities/{rarity[:20]} → HTTP {r.status_code}")
                 data = r.json()
-                lines.append(f"Typ: {type(data).__name__}")
-                if isinstance(data, list):
-                    lines.append(f"Anzahl Karten: {len(data)}")
-                    if data:
-                        lines.append(f"Erstes Element: {str(data[0])[:300]}")
-                elif isinstance(data, dict):
-                    lines.append(f"Dict-Keys: {list(data.keys())}")
-                    lines.append(f"Inhalt (gekürzt): {str(data)[:400]}")
-            else:
-                lines.append(f"Body: {r.text[:200]}")
-        except Exception as e:
-            lines.append(f"SIR-Endpunkt Fehler: {e}")
+                cards = data.get("cards", data) if isinstance(data, dict) else data
+                lines.append(f"Karten in Rarity: {len(cards) if isinstance(cards, list) else '?'}")
+
+                if isinstance(cards, list) and cards:
+                    first = cards[0]
+                    card_id = first.get("id", "")
+                    lines.append(f"Erste Karte: id={card_id}, localId={first.get('localId')}, name={first.get('name')}")
+
+                    # Detail abrufen
+                    r2 = req.get(f"{BASE}/en/cards/{card_id}", timeout=15)
+                    lines.append(f"GET /cards/{card_id} → HTTP {r2.status_code}")
+                    if r2.status_code == 200:
+                        detail = r2.json()
+                        pricing = detail.get("pricing") or {}
+                        cm = pricing.get("cardmarket") or {}
+                        lines.append(f"pricing keys: {list(pricing.keys())}")
+                        lines.append(f"cardmarket: {str(cm)[:200]}")
+                        lines.append(f"idProduct: {cm.get('idProduct')}")
+            except Exception as e:
+                lines.append(f"Detail Fehler: {e}")
 
         return "\n".join(lines)
 
