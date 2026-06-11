@@ -140,16 +140,23 @@ def refresh_sir_ir_cache() -> int:
 def get_deals(min_discount_pct: float = MIN_DISCOUNT_PCT,
               min_trend_eur: float = MIN_TREND_EUR,
               limit: int = 10) -> list[dict]:
-    """Findet SIR/IR-Karten mit aktuellem Angebot deutlich unter Marktwert.
+    """Findet Karten mit aktuellem Angebot deutlich unter Marktwert.
 
-    Vergleicht CM Price Guide 'low' (guenstigstes EU-Angebot) gegen 'trend'
-    (gleitender Durchschnitt). Ein Deal liegt vor wenn low >= min_discount_pct%
-    unter trend.
+    Zuerst aus dem SIR/IR-Cache (mit Namen + Rarität).
+    Fallback: direkt aus dem CM Price Guide (nur Preise, kein Name).
     """
     if not cm_priceguide.is_ready():
         log.warning("CM Price Guide noch nicht geladen, keine Deals.")
         return []
-    return [dict(r) for r in db.get_sir_ir_deals(min_discount_pct, min_trend_eur, limit)]
+
+    rows = db.get_sir_ir_deals(min_discount_pct, min_trend_eur, limit)
+    if rows:
+        return [dict(r) for r in rows]
+
+    # Fallback: direkt aus Price Guide (wenn SIR/IR-Cache leer)
+    log.info("SIR/IR-Cache leer, nutze direkte Price-Guide-Suche als Fallback.")
+    rows = db.get_priceguide_deals(min_discount_pct, min_trend_eur, limit)
+    return [dict(r) for r in rows]
 
 
 def check_watchlist_alerts() -> list[str]:
@@ -218,9 +225,11 @@ def format_deals_message(deals: list[dict]) -> str:
         pct = d["discount_pct"]
         fire = "🔥🔥🔥" if pct >= 35 else "🔥🔥" if pct >= 25 else "🔥"
         avg7_txt = f"Ø7T: {d['avg7']:.0f}€  |  " if d.get("avg7") else ""
+        name = d.get("name") or f"Produkt #{d.get('id_product', '?')}"
+        set_txt = f" — {d['set_name']}" if d.get("set_name") else ""
         url_part = f"\n   [Cardmarket]({d['cm_url']})" if d.get("cm_url") else ""
         lines.append(
-            f"*{i}. {d['name']}* — {d['set_name']}\n"
+            f"*{i}. {name}*{set_txt}\n"
             f"   {avg7_txt}Markt: *{d['trend']:.0f}€*  |  "
             f"Ab: *{d['low']:.0f}€*  |  -{pct:.0f}% {fire}{url_part}\n"
         )

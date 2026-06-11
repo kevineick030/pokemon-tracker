@@ -926,6 +926,31 @@ def get_sir_ir_deals(min_discount_pct: float, min_trend_eur: float,
         ).fetchall()
 
 
+def get_priceguide_deals(min_discount_pct: float, min_trend_eur: float,
+                         limit: int) -> list[sqlite3.Row]:
+    """Deals direkt aus CM Price Guide — kein TCGdex-Cache nötig.
+
+    Findet alle Produkte wo low deutlich unter trend liegt.
+    Hohe trend-Werte (>15€) entsprechen fast immer SIR/IR/Hyper Rare.
+    """
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT id_product,
+                   trend, low, avg7, avg30,
+                   ROUND((trend - low) / trend * 100, 1) AS discount_pct
+            FROM cm_price_guide
+            WHERE trend >= ?
+              AND low > 0
+              AND trend > low
+              AND (trend - low) / trend * 100 >= ?
+            ORDER BY discount_pct DESC
+            LIMIT ?
+            """,
+            (min_trend_eur, min_discount_pct, limit),
+        ).fetchall()
+
+
 def sir_ir_cache_count() -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT COUNT(*) AS c FROM sir_ir_cards").fetchone()
