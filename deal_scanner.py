@@ -115,7 +115,9 @@ def refresh_sir_ir_cache() -> int:
             if not detail:
                 continue
 
-            id_product = detail.get("idProduct")
+            # idProduct liegt verschachtelt unter pricing.cardmarket, NICHT top-level
+            cm = (detail.get("pricing") or {}).get("cardmarket") or {}
+            id_product = cm.get("idProduct")
             if not id_product:
                 continue
 
@@ -126,7 +128,7 @@ def refresh_sir_ir_cache() -> int:
                 set_id=set_id,
                 number=number,
                 rarity=rarity,
-                cm_url=detail.get("url"),
+                cm_url=cm.get("url"),
             )
             added += 1
 
