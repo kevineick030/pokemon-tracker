@@ -689,58 +689,78 @@ async def cmd_deals_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_deals_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt was TCGdex Rarity-Endpunkt tatsaechlich liefert."""
+    """Testet den kompletten Refresh-Pfad fuer 3 SIR-Karten."""
     if not _authorized(update):
         return
-    import asyncio, requests as req, urllib.parse
+    import asyncio, requests as req, urllib.parse, time as _time
+
     BASE = "https://api.tcgdex.net/v2"
-    TARGET_KEYWORDS = ["special illustration", "illustration rare", "hyper rare",
-                       "secret rare", "shiny", "ultra rare", "double rare"]
+    # SIR direkt testen (wissen wir, dass es existiert)
+    TEST_RARITY = "Special illustration rare"
 
     def _debug():
         lines = []
 
-        # 1. Rarities-Liste + Keyword-Matching
+        # 1. Karten der Rarity laden
+        encoded = urllib.parse.quote(TEST_RARITY, safe="")
         try:
-            r = req.get(f"{BASE}/en/rarities", timeout=15)
-            lines.append(f"GET /rarities → HTTP {r.status_code}")
-            all_rarities = r.json() if r.status_code == 200 else []
-            matched = [x for x in all_rarities if any(k in x.lower() for k in TARGET_KEYWORDS)]
-            lines.append(f"Gesamt: {len(all_rarities)}, Passend: {len(matched)}")
-            lines.append(f"Matched: {matched}")
+            r = req.get(f"{BASE}/en/rarities/{encoded}", timeout=15)
+            lines.append(f"Rarity HTTP: {r.status_code}")
+            data = r.json()
+            cards = data.get("cards", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            lines.append(f"Karten gefunden: {len(cards)}")
         except Exception as e:
-            lines.append(f"Rarities Fehler: {e}")
-            matched = []
+            lines.append(f"Rarity-Fehler: {e}")
+            return "\n".join(lines)
 
-        # 2. Erste passende Rarity → erste Karte → Detail
-        if matched:
-            rarity = matched[0]
-            encoded = urllib.parse.quote(rarity, safe="")
+        if not cards:
+            lines.append("Keine Karten → Abbruch")
+            return "\n".join(lines)
+
+        # 2. Erste 3 Karten: Detail + DB-Insert testen
+        inserted = 0
+        for card in cards[:3]:
+            card_id = card.get("id", "")
+            number = str(card.get("localId") or "")
+            name = card.get("name", "")
+            lines.append(f"\n--- {card_id} ({name}) ---")
+
+            # set_id ableiten
+            set_id = card_id[:-(len(number)+1)] if number and card_id.endswith(f"-{number}") else ""
+            lines.append(f"set_id={set_id!r}, number={number!r}")
+
             try:
-                r = req.get(f"{BASE}/en/rarities/{encoded}", timeout=15)
-                lines.append(f"\nGET /rarities/{rarity[:20]} → HTTP {r.status_code}")
-                data = r.json()
-                cards = data.get("cards", data) if isinstance(data, dict) else data
-                lines.append(f"Karten in Rarity: {len(cards) if isinstance(cards, list) else '?'}")
+                r2 = req.get(f"{BASE}/en/cards/{card_id}", timeout=15)
+                lines.append(f"Detail HTTP: {r2.status_code}")
+                if r2.status_code != 200:
+                    lines.append(f"Body: {r2.text[:100]}")
+                    continue
+                detail = r2.json()
+                cm = (detail.get("pricing") or {}).get("cardmarket") or {}
+                id_product = cm.get("idProduct")
+                cm_url = cm.get("url")
+                lines.append(f"idProduct={id_product}, url={str(cm_url)[:60]}")
 
-                if isinstance(cards, list) and cards:
-                    first = cards[0]
-                    card_id = first.get("id", "")
-                    lines.append(f"Erste Karte: id={card_id}, localId={first.get('localId')}, name={first.get('name')}")
-
-                    # Detail abrufen
-                    r2 = req.get(f"{BASE}/en/cards/{card_id}", timeout=15)
-                    lines.append(f"GET /cards/{card_id} → HTTP {r2.status_code}")
-                    if r2.status_code == 200:
-                        detail = r2.json()
-                        pricing = detail.get("pricing") or {}
-                        cm = pricing.get("cardmarket") or {}
-                        lines.append(f"pricing keys: {list(pricing.keys())}")
-                        lines.append(f"cardmarket: {str(cm)[:200]}")
-                        lines.append(f"idProduct: {cm.get('idProduct')}")
+                if id_product and set_id:
+                    db.upsert_sir_ir_card(
+                        id_product=int(id_product),
+                        name=detail.get("name") or name,
+                        set_name=(detail.get("set") or {}).get("name") or set_id,
+                        set_id=set_id,
+                        number=number,
+                        rarity=TEST_RARITY,
+                        cm_url=cm_url,
+                    )
+                    inserted += 1
+                    lines.append("→ DB-Insert OK")
+                else:
+                    lines.append(f"→ Übersprungen (id_product={id_product}, set_id={set_id!r})")
             except Exception as e:
-                lines.append(f"Detail Fehler: {e}")
+                lines.append(f"→ FEHLER: {e}")
+            _time.sleep(0.3)
 
+        cache = db.sir_ir_cache_count()
+        lines.append(f"\nInserted: {inserted}, Cache gesamt: {cache}")
         return "\n".join(lines)
 
     loop = asyncio.get_running_loop()
