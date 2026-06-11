@@ -216,6 +216,17 @@ def check_watchlist_alerts() -> list[str]:
     return alerts
 
 
+def _cm_deal_url(deal: dict) -> str:
+    """Gibt CM-Link zurück: direkte URL wenn vorhanden, sonst Namenssuche."""
+    if deal.get("cm_url"):
+        url = deal["cm_url"].split("?")[0]
+        return f"{url}?sellerCountry=7&language=3"
+    name = deal.get("name") or ""
+    number = str(deal.get("number") or "")
+    q = urllib.parse.quote_plus(f"{name} {number}".strip() if number else name)
+    return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}&sellerCountry=7&language=3"
+
+
 def format_deals_message(deals: list[dict]) -> str:
     if not deals:
         cache = db.sir_ir_cache_count()
@@ -241,11 +252,12 @@ def format_deals_message(deals: list[dict]) -> str:
         avg7_txt = f"Ø7T: {d['avg7']:.0f}€  |  " if d.get("avg7") else ""
         name = d.get("name") or f"Produkt #{d.get('id_product', '?')}"
         set_txt = f" — {d['set_name']}" if d.get("set_name") else ""
-        url_part = f"\n   [Cardmarket]({d['cm_url']})" if d.get("cm_url") else ""
+        cm_url = _cm_deal_url(d)
         lines.append(
             f"*{i}. {name}*{set_txt}\n"
             f"   {avg7_txt}Markt: *{d['trend']:.0f}€*  |  "
-            f"Ab: *{d['low']:.0f}€*  |  -{pct:.0f}% {fire}{url_part}\n"
+            f"Ab: *{d['low']:.0f}€*  |  -{pct:.0f}% {fire}\n"
+            f"   [→ Cardmarket]({cm_url})\n"
         )
 
     lines.append("_Cardmarket Price Guide (EU-weit) · taeglich 06:00_")
