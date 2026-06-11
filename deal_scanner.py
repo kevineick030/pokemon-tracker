@@ -99,10 +99,6 @@ def refresh_sir_ir_cache() -> int:
         time.sleep(REQUEST_DELAY)
 
         for card in cards:
-            rarity = card.get("rarity", "")
-            if not _is_target_rarity(rarity):
-                continue
-
             number = str(card.get("localId") or card.get("number") or "")
             if not number:
                 continue
@@ -115,7 +111,12 @@ def refresh_sir_ir_cache() -> int:
             if not detail:
                 continue
 
-            # idProduct liegt verschachtelt unter pricing.cardmarket, NICHT top-level
+            # Rarität aus dem Detail-Objekt prüfen (set-Endpoint liefert sie oft nicht)
+            rarity = detail.get("rarity") or card.get("rarity") or ""
+            if not _is_target_rarity(rarity):
+                continue
+
+            # idProduct liegt verschachtelt unter pricing.cardmarket
             cm = (detail.get("pricing") or {}).get("cardmarket") or {}
             id_product = cm.get("idProduct")
             if not id_product:
