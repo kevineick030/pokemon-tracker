@@ -688,6 +688,54 @@ async def cmd_deals_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                            disable_web_page_preview=True)
 
 
+async def cmd_deals_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zeigt was TCGdex Rarity-Endpunkt tatsaechlich liefert."""
+    if not _authorized(update):
+        return
+    import asyncio, requests as req
+    BASE = "https://api.tcgdex.net/v2"
+
+    def _debug():
+        lines = []
+        # 1. Rarities-Liste
+        try:
+            r = req.get(f"{BASE}/en/rarities", timeout=15)
+            lines.append(f"GET /rarities → HTTP {r.status_code}")
+            if r.status_code == 200:
+                data = r.json()
+                lines.append(f"Typ: {type(data).__name__}, Einträge: {len(data) if isinstance(data, list) else '?'}")
+                if isinstance(data, list):
+                    lines.append("Erste 5: " + str(data[:5]))
+        except Exception as e:
+            lines.append(f"Rarities-Liste Fehler: {e}")
+
+        # 2. SIR direkt
+        import urllib.parse
+        rarity = "Special Illustration Rare"
+        encoded = urllib.parse.quote(rarity, safe="")
+        url = f"{BASE}/en/rarities/{encoded}"
+        try:
+            r = req.get(url, timeout=15)
+            lines.append(f"\nGET /rarities/SIR → HTTP {r.status_code}")
+            if r.status_code == 200:
+                data = r.json()
+                lines.append(f"Typ: {type(data).__name__}")
+                if isinstance(data, list):
+                    lines.append(f"Anzahl Karten: {len(data)}")
+                    if data:
+                        lines.append(f"Erstes Element: {str(data[0])[:300]}")
+            else:
+                lines.append(f"Body: {r.text[:200]}")
+        except Exception as e:
+            lines.append(f"SIR-Endpunkt Fehler: {e}")
+
+        return "\n".join(lines)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, _debug)
+    await update.message.reply_text(f"```\n{result}\n```", parse_mode=ParseMode.MARKDOWN)
+
+
 async def cmd_karte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Direkte Kartensuche per Set-Kürzel + Nummer. Beispiel: /karte sv06 10/198"""
     if not _authorized(update):
@@ -1839,6 +1887,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("release_add", cmd_release_add))
     application.add_handler(CommandHandler("deals", cmd_deals))
     application.add_handler(CommandHandler("deals_refresh", cmd_deals_refresh))
+    application.add_handler(CommandHandler("deals_debug", cmd_deals_debug))
     application.add_handler(CommandHandler("karte", cmd_karte))
     application.add_handler(CommandHandler("retailers", cmd_retailers))
     application.add_handler(CallbackQueryHandler(on_callback, pattern=r"^pc:"))
