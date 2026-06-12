@@ -74,7 +74,7 @@ def cardmarket_search_url(name: str, number: str | None = None,
     q = urllib.parse.quote_plus((f"{name} {number}" if number else name) or "")
     lang = f"&language={language_id}" if language_id else ""
     return (f"https://www.cardmarket.com/de/Pokemon/Products/Search"
-            f"?searchString={q}&sellerCountry=7{lang}")
+            f"?searchString={q}&sellerCountry=7{lang}&minCondition=2")
 
 
 _CM_VERSION_RE = re.compile(r"-V\d+-[A-Z]{2,5}\d+")
@@ -96,7 +96,7 @@ def _safe_cm_url(url: str | None, fallback_name: str | None = None,
         if _CM_VERSION_RE.search(url):
             # Vollständige Slug-URL: DE-Filter anhängen und direkt nutzen
             base = url.split("?")[0]
-            return f"{base}?sellerCountry=7&language=3"
+            return f"{base}?sellerCountry=7&language=3&minCondition=2"
         # Unvollständige URL (kein Versionssuffix) → Suche
         return cardmarket_search_url(fallback_name, number) if fallback_name else None
     return url

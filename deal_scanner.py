@@ -217,14 +217,14 @@ def check_watchlist_alerts() -> list[str]:
 
 
 def _cm_deal_url(deal: dict) -> str:
-    """Gibt CM-Link zurück: direkte URL wenn vorhanden, sonst Namenssuche."""
+    """Gibt CM-Link zurück mit NM-Filter (minCondition=2 = Near Mint oder besser)."""
     if deal.get("cm_url"):
         url = deal["cm_url"].split("?")[0]
-        return f"{url}?sellerCountry=7&language=3"
+        return f"{url}?sellerCountry=7&language=3&minCondition=2"
     name = deal.get("name") or ""
     number = str(deal.get("number") or "")
     q = urllib.parse.quote_plus(f"{name} {number}".strip() if number else name)
-    return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}&sellerCountry=7&language=3"
+    return f"https://www.cardmarket.com/de/Pokemon/Products/Search?searchString={q}&sellerCountry=7&language=3&minCondition=2"
 
 
 def format_deals_message(deals: list[dict]) -> str:
