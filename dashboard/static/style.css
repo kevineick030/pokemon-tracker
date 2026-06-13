@@ -1,29 +1,41 @@
-/* Pokémon Tracker Dashboard – dunkles Theme */
+/* Pokémon Tracker Dashboard – modernes dunkles Theme */
 :root {
-  --bg: #1a1a2e;
-  --bg-card: #16213e;
-  --bg-elev: #0f3460;
+  --bg: #0b0c14;
+  --bg-card: #14151f;
+  --bg-elev: #1d1f2e;
   --accent: #e94560;
-  --text: #ffffff;
-  --muted: #9a9ab5;
-  --up: #4ade80;
+  --accent2: #7c5cff;
+  --text: #f2f3f7;
+  --muted: #8a8fad;
+  --up: #34d399;
   --down: #f87171;
-  --radius: 14px;
+  --border: rgba(255,255,255,.07);
+  --radius: 16px;
+  --shadow: 0 8px 30px rgba(0,0,0,.35);
+  --grad-accent: linear-gradient(135deg, #e94560 0%, #7c5cff 100%);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: var(--bg);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(900px 500px at 100% -10%, rgba(124,92,255,.10), transparent 60%),
+    radial-gradient(700px 400px at -10% 0%, rgba(233,69,96,.10), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: .1px;
 }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.25rem; letter-spacing: -.2px; }
 
 /* ---------- Topbar / Nav ---------- */
 .topbar {
@@ -31,21 +43,32 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: .5rem;
-  padding: 1rem 1.5rem;
-  background: var(--bg-card);
-  border-bottom: 2px solid var(--accent);
+  gap: .75rem;
+  padding: .85rem 1.5rem;
+  background: rgba(16,17,26,.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
-.brand { font-size: 1.25rem; font-weight: 700; }
-.nav { display: flex; gap: .25rem; flex-wrap: wrap; }
+.brand {
+  font-size: 1.2rem; font-weight: 800; letter-spacing: -.3px;
+  background: var(--grad-accent);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.nav { display: flex; gap: .15rem; flex-wrap: wrap; align-items: center; }
 .nav a {
-  color: var(--text);
-  padding: .5rem .9rem;
-  border-radius: 8px;
-  font-weight: 500;
+  color: var(--muted);
+  padding: .5rem .85rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: .92rem;
+  transition: background .15s, color .15s;
 }
-.nav a:hover { background: var(--bg-elev); text-decoration: none; }
-.nav a.active { background: var(--accent); color: #fff; }
+.nav a:hover { background: var(--bg-elev); color: var(--text); text-decoration: none; }
+.nav a.active { background: var(--grad-accent); color: #fff; box-shadow: 0 4px 14px rgba(233,69,96,.35); }
 .nav a.logout { color: var(--muted); }
 
 .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 1.5rem; flex: 1; }
@@ -53,15 +76,28 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Cards / Layout ---------- */
 .card {
-  background: var(--bg-card);
+  background: linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0)) , var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.25rem 1.5rem;
+  padding: 1.35rem 1.5rem;
   margin-bottom: 1.5rem;
-  box-shadow: 0 4px 18px rgba(0,0,0,.25);
+  box-shadow: var(--shadow);
 }
-.card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+.card h2 { font-size: 1.05rem; margin-bottom: 1rem; font-weight: 700; letter-spacing: -.2px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.card-head h2 { margin-bottom: 0; }
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }
+
+/* ---------- Zeitraum-Umschalter (segmented control) ---------- */
+.range-toggle { display: inline-flex; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px; }
+.range-toggle button {
+  border: none; background: transparent; color: var(--muted);
+  padding: .35rem .8rem; border-radius: 999px; cursor: pointer;
+  font-size: .82rem; font-weight: 700; transition: background .15s, color .15s;
+}
+.range-toggle button:hover { color: var(--text); }
+.range-toggle button.active { background: var(--grad-accent); color: #fff; }
 
 .hero-grid {
   display: grid;
@@ -75,10 +111,14 @@ a:hover { text-decoration: underline; }
   gap: 1.5rem;
 }
 
-.stat-big { text-align: left; }
-.stat-label { color: var(--muted); font-size: .9rem; margin-bottom: .35rem; }
-.stat-value { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
-.trend { font-size: .9rem; font-weight: 600; }
+.stat-big { text-align: left; position: relative; overflow: hidden; }
+.stat-big::before {
+  content: ""; position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+  background: var(--grad-accent); opacity: .9;
+}
+.stat-label { color: var(--muted); font-size: .8rem; margin-bottom: .45rem; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+.stat-value { font-size: 2.25rem; font-weight: 800; line-height: 1.05; letter-spacing: -.5px; }
+.trend { font-size: .9rem; font-weight: 700; }
 .trend.up, .up { color: var(--up); }
 .trend.down, .down { color: var(--down); }
 
@@ -117,11 +157,12 @@ a:hover { text-decoration: underline; }
 }
 .filters { display: flex; gap: .5rem; flex-wrap: wrap; }
 .chip {
-  background: var(--bg-card); color: var(--text); border: 1px solid transparent;
-  padding: .45rem 1rem; border-radius: 20px; cursor: pointer; font-size: .9rem;
+  background: var(--bg-elev); color: var(--muted); border: 1px solid var(--border);
+  padding: .45rem 1rem; border-radius: 999px; cursor: pointer; font-size: .88rem; font-weight: 600;
+  transition: border-color .15s, color .15s, background .15s;
 }
-.chip:hover { border-color: var(--accent); }
-.chip.active { background: var(--accent); color: #fff; }
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.active { background: var(--grad-accent); color: #fff; border-color: transparent; }
 .sort select {
   background: var(--bg-card); color: var(--text); border: 1px solid var(--bg-elev);
   padding: .45rem .7rem; border-radius: 8px;
@@ -134,13 +175,14 @@ a:hover { text-decoration: underline; }
   gap: 1.25rem;
 }
 .poke-card {
-  background: var(--bg-card); border-radius: var(--radius); overflow: hidden;
-  color: var(--text); display: flex; flex-direction: column;
-  transition: transform .15s, box-shadow .15s;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; color: var(--text); display: flex; flex-direction: column;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
 .poke-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(233,69,96,.25);
+  transform: translateY(-5px);
+  box-shadow: 0 14px 34px rgba(233,69,96,.22);
+  border-color: rgba(233,69,96,.5);
   text-decoration: none;
 }
 .poke-card-wrap { position: relative; }
@@ -212,7 +254,7 @@ canvas { max-width: 100%; }
 
 /* Chart-Container mit fester Höhe — verhindert das endlose Wachsen von
    Chart.js-Canvas (maintainAspectRatio:false braucht eine begrenzte Höhe). */
-.chart-box { position: relative; height: 280px; width: 100%; }
+.chart-box { position: relative; height: 320px; width: 100%; }
 .chart-box canvas { position: absolute; inset: 0; }
 
 /* ---------- Scalp-Grid + Timeline ---------- */

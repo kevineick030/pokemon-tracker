@@ -150,6 +150,15 @@ def set_profile(name):
     return redirect(request.referrer or url_for("index"))
 
 
+@app.route("/api/portfolio-chart")
+@login_required
+def api_portfolio_chart():
+    """Wertentwicklung als JSON für den gewählten Zeitraum + das aktive Profil."""
+    days = request.args.get("days", default=30, type=int)
+    days = max(1, min(days, 3650))
+    return daily_portfolio_values(days, active_profile())
+
+
 # ---------------------------------------------------------------- Datenhelfer
 def _rarity_class(rarity: str | None) -> str:
     r = (rarity or "").lower()

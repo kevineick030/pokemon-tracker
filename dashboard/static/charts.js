@@ -2,21 +2,58 @@
 
 const THEME = {
   accent: "#e94560",
+  accent2: "#7c5cff",
   accentSoft: "rgba(233, 69, 96, 0.15)",
-  grid: "rgba(255, 255, 255, 0.08)",
-  text: "#cfcfe6",
+  grid: "rgba(255, 255, 255, 0.06)",
+  text: "#9aa0bf",
 };
+
+// Globale, dezente Chart.js-Defaults (modernes Look & Feel)
+if (window.Chart) {
+  Chart.defaults.font.family =
+    "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif";
+  Chart.defaults.color = THEME.text;
+  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(18,19,32,0.95)";
+  Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,0.12)";
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.padding = 12;
+  Chart.defaults.plugins.tooltip.cornerRadius = 10;
+  Chart.defaults.plugins.tooltip.displayColors = false;
+  Chart.defaults.plugins.tooltip.titleColor = "#fff";
+  Chart.defaults.plugins.tooltip.bodyColor = "#cfd2e6";
+}
 
 function _baseOptions() {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
     plugins: { legend: { display: false } },
     scales: {
-      x: { grid: { color: THEME.grid }, ticks: { color: THEME.text } },
-      y: { grid: { color: THEME.grid }, ticks: { color: THEME.text } },
+      x: {
+        grid: { display: false },
+        ticks: { color: THEME.text, maxRotation: 0, autoSkip: true, maxTicksLimit: 7 },
+        border: { display: false },
+      },
+      y: {
+        grid: { color: THEME.grid, drawTicks: false },
+        ticks: {
+          color: THEME.text, padding: 8,
+          callback: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + "k" : v) + " €",
+        },
+        border: { display: false },
+      },
     },
   };
+}
+
+// Vertikaler Verlauf vom Akzent (oben) ins Transparente (unten)
+function _areaGradient(ctx, area, color) {
+  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+  g.addColorStop(0, "rgba(233,69,96,0.35)");
+  g.addColorStop(0.6, "rgba(233,69,96,0.08)");
+  g.addColorStop(1, "rgba(233,69,96,0)");
+  return g;
 }
 
 function renderLineChart(canvasId, labels, data, label) {
@@ -32,17 +69,47 @@ function renderLineChart(canvasId, labels, data, label) {
         label: label,
         data: data,
         borderColor: THEME.accent,
-        backgroundColor: THEME.accentSoft,
-        borderWidth: 2,
+        backgroundColor: (c) => {
+          const { ctx, chartArea } = c.chart;
+          if (!chartArea) return THEME.accentSoft;
+          return _areaGradient(ctx, chartArea, THEME.accent);
+        },
+        borderWidth: 2.5,
         fill: true,
-        tension: 0.3,
-        pointRadius: 2,
-        pointBackgroundColor: THEME.accent,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: "#fff",
+        pointHoverBorderColor: THEME.accent,
+        pointHoverBorderWidth: 2,
       }],
     },
     options: _baseOptions(),
   });
   return el._chart;
+}
+
+/* -------- Wertentwicklung mit Zeitraum-Umschaltung -------- */
+function initPortfolioChart(canvasId, toggleId, labels, values) {
+  renderLineChart(canvasId, labels, values, "Marktwert (€)");
+  const toggle = document.getElementById(toggleId);
+  if (!toggle) return;
+  toggle.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      toggle.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const days = btn.dataset.days;
+      try {
+        const res = await fetch(`/api/portfolio-chart?days=${days}`, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        const d = await res.json();
+        renderLineChart(canvasId, d.labels, d.values, "Marktwert (€)");
+      } catch (e) {
+        console.error("Chart-Update fehlgeschlagen", e);
+      }
+    });
+  });
 }
 
 function renderBarChart(canvasId, labels, data, label) {
