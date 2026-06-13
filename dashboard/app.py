@@ -294,37 +294,34 @@ def price_guide_info(card) -> dict | None:
     import cm_priceguide
     import tcgdex
 
-    product_id = card["cardmarket_product_id"]
-    cm_url = None
-    if not product_id:
-        try:
-            found = tcgdex.lookup(
-                card["card_name"], set_name=card["set_name"],
-                number=card["card_number"], rarity=card["rarity"],
-            )
-        except Exception:
-            found = None
-        if found:
-            product_id = found.get("idProduct")
-            cm_url = found.get("url")
+    # Immer über TCGdex auflösen — liefert denselben geprüften Direktlink
+    # wie der Telegram-Workflow (z.B. /Singles/Paldean-Fates/Charmander-V2-PAF109)
+    # statt einer Namenssuche, die auf Cardmarket oft ins Leere führt.
+    try:
+        found = tcgdex.lookup(
+            card["card_name"], set_name=card["set_name"],
+            number=card["card_number"], rarity=card["rarity"],
+        )
+    except Exception:
+        found = None
+
+    cm_url = found.get("url") if found else None
+    product_id = card["cardmarket_product_id"] or (found.get("idProduct") if found else None)
+
+    # Fallback-Link nur wenn TCGdex gar nichts lieferte (Nummer ohne /-Suffix)
+    if not cm_url:
+        num = (card["card_number"] or "").split("/")[0].strip() or None
+        cm_url = tcgdex.cardmarket_search_url(card["card_name"] or "", number=num)
 
     cm = cm_priceguide.get_price(product_id) if product_id else None
     if not cm:
-        # Wenigstens einen gefilterten Suchlink anbieten
-        return {
-            "low": None, "trend": None, "avg7": None, "avg30": None,
-            "url": cm_url or tcgdex.cardmarket_search_url(
-                card["card_name"] or "", number=card["card_number"]
-            ),
-        }
+        return {"low": None, "trend": None, "avg7": None, "avg30": None, "url": cm_url}
     return {
         "low": cm.get("low"),
         "trend": cm.get("trend") or cm.get("avg"),
         "avg7": cm.get("avg7"),
         "avg30": cm.get("avg30"),
-        "url": cm_url or tcgdex.cardmarket_search_url(
-            card["card_name"] or "", number=card["card_number"]
-        ),
+        "url": cm_url,
     }
 
 
