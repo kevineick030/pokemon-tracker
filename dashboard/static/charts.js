@@ -28,6 +28,11 @@ function _baseOptions() {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
+    animation: { duration: 900, easing: "easeOutQuart" },
+    animations: {
+      // Linie „wächst" sanft von unten herein
+      y: { from: (ctx) => (ctx.chart.chartArea ? ctx.chart.chartArea.bottom : 0) },
+    },
     plugins: { legend: { display: false } },
     scales: {
       x: {
@@ -90,7 +95,9 @@ function renderLineChart(canvasId, labels, data, label) {
 }
 
 /* -------- Wertentwicklung mit Zeitraum-Umschaltung -------- */
-function initPortfolioChart(canvasId, toggleId, labels, values) {
+// Generisch: lädt bei Klick auf einen Zeitraum-Button neue Daten von `urlBase`
+// (z.B. /api/portfolio-chart oder /api/card-chart/5) und zeichnet neu.
+function initRangeChart(canvasId, toggleId, urlBase, labels, values) {
   renderLineChart(canvasId, labels, values, "Marktwert (€)");
   const toggle = document.getElementById(toggleId);
   if (!toggle) return;
@@ -99,8 +106,9 @@ function initPortfolioChart(canvasId, toggleId, labels, values) {
       toggle.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const days = btn.dataset.days;
+      const sep = urlBase.includes("?") ? "&" : "?";
       try {
-        const res = await fetch(`/api/portfolio-chart?days=${days}`, {
+        const res = await fetch(`${urlBase}${sep}days=${days}`, {
           headers: { "X-Requested-With": "fetch" },
         });
         const d = await res.json();
@@ -110,6 +118,14 @@ function initPortfolioChart(canvasId, toggleId, labels, values) {
       }
     });
   });
+}
+
+function initPortfolioChart(canvasId, toggleId, labels, values) {
+  initRangeChart(canvasId, toggleId, "/api/portfolio-chart", labels, values);
+}
+
+function initCardChart(canvasId, toggleId, cardId, labels, values) {
+  initRangeChart(canvasId, toggleId, `/api/card-chart/${cardId}`, labels, values);
 }
 
 function renderBarChart(canvasId, labels, data, label) {

@@ -159,6 +159,15 @@ def api_portfolio_chart():
     return daily_portfolio_values(days, active_profile())
 
 
+@app.route("/api/card-chart/<int:card_id>")
+@login_required
+def api_card_chart(card_id):
+    """Wertentwicklung einer einzelnen Sammlungskarte als JSON."""
+    days = request.args.get("days", default=30, type=int)
+    days = max(1, min(days, 3650))
+    return card_value_history(card_id, days)
+
+
 # ---------------------------------------------------------------- Datenhelfer
 def _rarity_class(rarity: str | None) -> str:
     r = (rarity or "").lower()
@@ -209,16 +218,24 @@ def top_winners(days: int = 7, n: int = 3, owner: str | None = None) -> list[dic
         now = latest["market_value"]
         past = db.get_portfolio_value_at(card["id"], days)
         if past and past["market_value"] is not None:
-            gain = now - past["market_value"]
+            base = past["market_value"]
+            gain = now - base
             basis = "7T"
         else:
-            cost = card["purchase_price"] or 0.0
-            gain = now - cost
-            basis = "Kauf"
+            base = card["purchase_price"] or 0.0
+            gain = now - base
+            basis = "seit Kauf"
+        gain = round(gain, 2)
+        # Nur echte Gewinner zeigen — Karten ohne Bewegung (0,00 €) oder im
+        # Minus gehören nicht in die „Top-Gewinner"-Liste.
+        if gain <= 0:
+            continue
+        pct = (gain / base * 100) if base > 0 else 0.0
         winners.append({
             "id": card["id"],
             "name": card["card_name"],
-            "gain": round(gain, 2),
+            "gain": gain,
+            "pct": round(pct, 1),
             "now": round(now, 2),
             "basis": basis,
         })

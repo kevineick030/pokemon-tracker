@@ -34,7 +34,18 @@
 </div>
 
 <section class="card">
-  <h2>Wertentwicklung (30 Tage)</h2>
+  <div class="card-head">
+    <h2>Wertentwicklung</h2>
+    {% if chart_values %}
+    <div class="range-toggle" id="cardRangeToggle">
+      <button data-days="7">7T</button>
+      <button data-days="30" class="active">30T</button>
+      <button data-days="90">90T</button>
+      <button data-days="365">1J</button>
+      <button data-days="3650">Max</button>
+    </div>
+    {% endif %}
+  </div>
   {% if chart_values %}
     <div class="chart-box"><canvas id="cardChart"></canvas></div>
   {% else %}
@@ -92,7 +103,8 @@
 {% block scripts %}
 {% if chart_values %}
 <script>
-  renderLineChart('cardChart', {{ chart_labels|tojson }}, {{ chart_values|tojson }}, 'Marktwert (€)');
+  initCardChart('cardChart', 'cardRangeToggle', {{ card.id|tojson }},
+                {{ chart_labels|tojson }}, {{ chart_values|tojson }});
 </script>
 {% endif %}
 {% endblock %}
