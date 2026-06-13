@@ -22,31 +22,37 @@
 {% if cards %}
 <div class="gallery" id="gallery">
   {% for c in cards %}
-  <a class="poke-card"
-     href="{{ url_for('karte', card_id=c.id) }}"
-     data-rarity="{{ c.rarity_class }}"
-     data-value="{{ c.market_value or 0 }}"
-     data-gain="{{ c.gain or 0 }}"
-     data-date="{{ c.purchase_date }}">
-    <div class="poke-img">
-      {% if c.image %}
-        <img src="{{ url_for('card_image', filename=c.image) }}" alt="{{ c.name }}" loading="lazy">
-      {% else %}
-        <div class="no-img">🃏</div>
-      {% endif %}
-    </div>
-    <div class="poke-info">
-      <div class="poke-name">{{ c.name }}</div>
-      <div class="muted small">{{ c.set_name or '—' }} · {{ c.language or '?' }}/{{ c.condition or '?' }}</div>
-      <div class="poke-prices">
-        <span>Kauf {{ '%.2f'|format(c.purchase_price) }} €</span>
-        <span>→ {{ ('%.2f €'|format(c.market_value)) if c.market_value is not none else '–' }}</span>
+  <div class="poke-card-wrap"
+       data-rarity="{{ c.rarity_class }}"
+       data-value="{{ c.market_value or 0 }}"
+       data-gain="{{ c.gain or 0 }}"
+       data-date="{{ c.purchase_date }}">
+    <form class="poke-del" method="post"
+          action="{{ url_for('sammlung_delete', card_id=c.id) }}"
+          onsubmit="return confirm('„{{ c.name }}“ aus der Sammlung entfernen? (z. B. nach Verkauf)');">
+      <button type="submit" title="Aus Sammlung entfernen">✕</button>
+    </form>
+    <a class="poke-card" href="{{ url_for('karte', card_id=c.id) }}">
+      <div class="poke-img">
+        {% if c.image %}
+          <img src="{{ url_for('card_image', filename=c.image) }}" alt="{{ c.name }}" loading="lazy">
+        {% else %}
+          <div class="no-img">🃏</div>
+        {% endif %}
       </div>
-      {% if c.gain is not none %}
-        <div class="trend {{ 'up' if c.gain >= 0 else 'down' }}">{{ '%+.2f'|format(c.gain) }} €</div>
-      {% endif %}
-    </div>
-  </a>
+      <div class="poke-info">
+        <div class="poke-name">{{ c.name }}</div>
+        <div class="muted small">{{ c.set_name or '—' }} · {{ c.language or '?' }}/{{ c.condition or '?' }}</div>
+        <div class="poke-prices">
+          <span>Kauf {{ '%.2f'|format(c.purchase_price) }} €</span>
+          <span>→ {{ ('%.2f €'|format(c.market_value)) if c.market_value is not none else '–' }}</span>
+        </div>
+        {% if c.gain is not none %}
+          <div class="trend {{ 'up' if c.gain >= 0 else 'down' }}">{{ '%+.2f'|format(c.gain) }} €</div>
+        {% endif %}
+      </div>
+    </a>
+  </div>
   {% endfor %}
 </div>
 {% else %}

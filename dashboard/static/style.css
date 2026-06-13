@@ -143,6 +143,15 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 8px 24px rgba(233,69,96,.25);
   text-decoration: none;
 }
+.poke-card-wrap { position: relative; }
+.poke-del { position: absolute; top: .5rem; right: .5rem; z-index: 2; margin: 0; }
+.poke-del button {
+  width: 28px; height: 28px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,.55); color: #fff; font-size: .9rem; line-height: 1;
+  cursor: pointer; opacity: 0; transition: opacity .15s, background .15s;
+}
+.poke-card-wrap:hover .poke-del button { opacity: 1; }
+.poke-del button:hover { background: var(--accent, #e94560); }
 .poke-img { aspect-ratio: 3/4; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; }
 .poke-img img { width: 100%; height: 100%; object-fit: cover; }
 .no-img { font-size: 3rem; opacity: .4; }

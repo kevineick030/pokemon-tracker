@@ -161,19 +161,34 @@ def daily_portfolio_values(days: int = 30) -> dict:
 
 
 def top_winners(days: int = 7, n: int = 3) -> list[dict]:
-    """Top-N Karten nach Wertzuwachs im Zeitraum."""
+    """Top-N Karten nach Wertzuwachs.
+
+    Bevorzugt die 7-Tage-Veränderung; gibt es noch keine 7-Tage-Historie
+    (Sammlung/Bewertung erst seit Kurzem), wird auf den Gewinn seit Kauf
+    (Marktwert − Kaufpreis) zurückgegriffen, damit die Übersicht sofort
+    sinnvolle Werte zeigt.
+    """
     winners = []
     for card in db.get_portfolio():
         latest = db.get_latest_portfolio_value(card["id"])
+        if not latest or latest["market_value"] is None:
+            continue
+        now = latest["market_value"]
         past = db.get_portfolio_value_at(card["id"], days)
-        if latest and past:
-            gain = latest["market_value"] - past["market_value"]
-            winners.append({
-                "id": card["id"],
-                "name": card["card_name"],
-                "gain": round(gain, 2),
-                "now": round(latest["market_value"], 2),
-            })
+        if past and past["market_value"] is not None:
+            gain = now - past["market_value"]
+            basis = "7T"
+        else:
+            cost = card["purchase_price"] or 0.0
+            gain = now - cost
+            basis = "Kauf"
+        winners.append({
+            "id": card["id"],
+            "name": card["card_name"],
+            "gain": round(gain, 2),
+            "now": round(now, 2),
+            "basis": basis,
+        })
     winners.sort(key=lambda w: w["gain"], reverse=True)
     return winners[:n]
 
@@ -333,6 +348,18 @@ def sammlung():
             "image": image_name,
         })
     return render_template("sammlung.html", cards=cards, active="sammlung")
+
+
+@app.route("/sammlung/<int:card_id>/delete", methods=["POST"])
+@login_required
+def sammlung_delete(card_id):
+    """Entfernt eine Karte aus der Sammlung (z.B. nach Verkauf)."""
+    card = db.get_portfolio_card(card_id)
+    if card and db.remove_portfolio_card(card_id):
+        flash(f"'{card['card_name']}' aus der Sammlung entfernt.", "success")
+    else:
+        flash("Karte nicht gefunden.", "error")
+    return redirect(url_for("sammlung"))
 
 
 @app.route("/karte/<int:card_id>")

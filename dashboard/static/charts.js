@@ -128,7 +128,7 @@ function renderSparkline(canvas, data) {
 function initCollection() {
   const gallery = document.getElementById("gallery");
   if (!gallery) return;
-  const cards = Array.from(gallery.querySelectorAll(".poke-card"));
+  const cards = Array.from(gallery.querySelectorAll(".poke-card-wrap"));
   let filter = "all";
 
   document.querySelectorAll("#filters .chip").forEach((btn) => {

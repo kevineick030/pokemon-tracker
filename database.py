@@ -757,6 +757,19 @@ def update_portfolio_condition(portfolio_card_id: int, condition: str) -> None:
         )
 
 
+def remove_portfolio_card(portfolio_card_id: int) -> bool:
+    """Entfernt eine Karte aus der Sammlung (z.B. nach Verkauf).
+
+    Die Wert-Historie wird per ON DELETE CASCADE automatisch mitgelöscht.
+    Gibt True zurück, wenn eine Karte entfernt wurde.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM portfolio WHERE id = ?", (portfolio_card_id,)
+        )
+        return cur.rowcount > 0
+
+
 def count_portfolio_by_name(name: str) -> int:
     with get_conn() as conn:
         row = conn.execute(
