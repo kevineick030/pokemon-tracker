@@ -26,16 +26,8 @@ import profit_calculator
 import release_calendar
 import tcgdex as pokeprice   # TCGdex: Name→idProduct-Mapper + Fallback-Preise
 import cm_priceguide          # Lokaler Cardmarket Price Guide (taeglich, ~75k Produkte)
-from cardmarket import (
-    CardmarketError, filter_de_offers, market_median, parse_article,
-    LANGUAGE_IDS,
-)
-import scanner
 
 log = logging.getLogger(__name__)
-
-# Sprach-IDs für /preis-Vergleich
-LANG_QUERY = {"DE": 3, "EN": 1, "JP": 7}
 
 
 def _authorized(update: Update) -> bool:
@@ -43,10 +35,6 @@ def _authorized(update: Update) -> bool:
     if not config.TELEGRAM_CHAT_ID:
         return True
     return str(update.effective_chat.id) == str(config.TELEGRAM_CHAT_ID)
-
-
-def _mkm(context: ContextTypes.DEFAULT_TYPE):
-    return context.application.bot_data["mkm"]
 
 
 # ---------------------------------------------------------------- Commands
@@ -107,11 +95,11 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     product_id = None
     try:
-        products = _mkm(context).find_products(name, exact=False)
-        if products:
-            product_id = products[0].get("idProduct")
-    except CardmarketError as exc:
-        log.warning("Produktsuche fehlgeschlagen: %s", exc)
+        card = pokeprice.lookup(name)
+        if card:
+            product_id = card.get("idProduct")
+    except Exception as exc:
+        log.warning("TCGdex-Produktsuche fehlgeschlagen: %s", exc)
 
     db.add_card(name, product_id)
     suffix = f" (Produkt-ID {product_id})" if product_id else " (Produkt-ID folgt beim Scan)"
@@ -145,62 +133,14 @@ async def cmd_preis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Nutzung: /preis <Kartenname>")
         return
 
-    # Ohne Cardmarket: Preise über pokemontcg.io
-    if not config.cardmarket_enabled():
-        import asyncio
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(None, _pokeprice_text, name, None, None)
-        is_sealed = _set_pending_from_command(context, name, None)
-        keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
-        await update.message.reply_text(
-            text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
-        )
-        return
-
-    card = db.get_card_by_name(name)
-    product_id = card["cardmarket_product_id"] if card else None
-    if not product_id:
-        try:
-            products = _mkm(context).find_products(name, exact=False)
-            if products:
-                product_id = products[0].get("idProduct")
-        except CardmarketError as exc:
-            await update.message.reply_text(f"⚠️ Cardmarket-Fehler: {exc}")
-            return
-    if not product_id:
-        await update.message.reply_text(f"❓ Keine Produkte für '{name}' gefunden.")
-        return
-
-    # Preise je Sprache (DE/EN/JP)
-    lines = [f"💰 *{name}*", ""]
-    for lang_label, lang_id in LANG_QUERY.items():
-        try:
-            articles = _mkm(context).get_articles(
-                product_id, idLanguage=lang_id, maxResults=50
-            )
-        except CardmarketError:
-            articles = []
-        offers = filter_de_offers(articles)
-        med = market_median(offers)
-        if med:
-            cheapest = min(o["price"] for o in offers)
-            lines.append(f"{lang_label}: ab {cheapest:.2f}€ (Median {med:.2f}€)")
-        else:
-            lines.append(f"{lang_label}: keine DE-Angebote")
-
-    # Trend + Empfehlung (nur wenn auf Watchlist mit Historie)
-    if card:
-        trend = trend_analyzer.analyze(card["id"])
-        lines.append("")
-        lines.append(f"📈 Trend: {trend['emoji']} {trend['trend']} "
-                     f"({trend['change_pct']:+.1f}%)")
-        lines.append(f"💡 Empfehlung: {trend['recommendation']}")
-
-    # Aktions-Buttons anbieten
-    is_sealed = _set_pending_from_command(context, name, product_id)
+    # Preise über TCGdex + lokalen CM Price Guide
+    import asyncio
+    loop = asyncio.get_running_loop()
+    text = await loop.run_in_executor(None, _pokeprice_text, name, None, None)
+    is_sealed = _set_pending_from_command(context, name, None)
     keyboard = _build_action_keyboard(["collect", "watch", "scalp"], is_sealed)
     await update.message.reply_text(
-        "\n".join(lines), parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
+        text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
     )
 
 
@@ -223,14 +163,16 @@ def _set_pending_from_command(context: ContextTypes.DEFAULT_TYPE, name: str,
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         return
-    mkm = _mkm(context)
-    online = mkm.ping()
     threshold = db.get_setting("savings_threshold")
     min_score = db.get_setting("min_score")
     scans = db.count_scans_since(days=1)
+    pg_count = db.cm_price_guide_count()
+    pg_status = f"🟢 {pg_count:,} Produkte" if pg_count else "🔴 noch nicht geladen"
+    sir_count = db.sir_ir_cache_count()
     await update.message.reply_text(
         "🤖 *Status*\n\n"
-        f"Cardmarket-API: {'🟢 online' if online else '🔴 offline'}\n"
+        f"CM Price Guide: {pg_status}\n"
+        f"SIR/IR-Cache: {sir_count} Karten\n"
         f"Watchlist: {len(db.get_watchlist())} Karten\n"
         f"Sammlung: {len(db.get_portfolio())} Karten\n"
         f"Ersparnis-Schwelle: {threshold}%\n"
@@ -284,17 +226,6 @@ async def cmd_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     db.set_setting("min_score", val)
     await update.message.reply_text(f"✅ Min. Deal-Score auf {val} gesetzt.")
-
-
-async def cmd_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _authorized(update):
-        return
-    await update.message.reply_text("🔍 Scan läuft …")
-    alerts = await run_scan_and_alert(context.application)
-    if not alerts:
-        await update.message.reply_text("✅ Scan fertig — keine Schnäppchen gefunden.")
-    else:
-        await update.message.reply_text(f"✅ Scan fertig — {len(alerts)} Alert(s) gesendet.")
 
 
 async def cmd_sammlung(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -367,10 +298,10 @@ async def cmd_gekauft(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = card["cardmarket_product_id"]
     if not product_id:
         try:
-            products = _mkm(context).find_products(name, exact=False)
-            if products:
-                product_id = products[0].get("idProduct")
-        except CardmarketError:
+            found = pokeprice.lookup(name)
+            if found:
+                product_id = found.get("idProduct")
+        except Exception:
             pass
 
     db.add_portfolio_card(name, price, product_id=product_id)
@@ -443,36 +374,6 @@ async def cmd_briefing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import briefing
     await update.message.reply_text(
         briefing.build_briefing(), parse_mode=ParseMode.MARKDOWN
-    )
-
-
-async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _authorized(update):
-        return
-    if not context.args:
-        await update.message.reply_text("Nutzung: /import <wunschlisten-id>")
-        return
-    wantslist_id = context.args[0].strip()
-    await update.message.reply_text("📥 Wunschliste wird importiert …")
-    try:
-        items = _mkm(context).get_wantslist(wantslist_id)
-    except CardmarketError as exc:
-        await update.message.reply_text(f"⚠️ Cardmarket-Fehler: {exc}")
-        return
-    if not items:
-        await update.message.reply_text("❓ Wunschliste leer oder nicht gefunden.")
-        return
-
-    added, skipped = 0, 0
-    for item in items:
-        if db.get_card_by_name(item["name"]):
-            skipped += 1
-            continue
-        db.add_card(item["name"], item.get("product_id"))
-        added += 1
-    await update.message.reply_text(
-        f"✅ Import fertig: {added} neu hinzugefügt, {skipped} Duplikate übersprungen "
-        f"({len(items)} Karten in der Wunschliste)."
     )
 
 
@@ -976,77 +877,6 @@ def _build_threshold_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _price_check_text(context: ContextTypes.DEFAULT_TYPE, product_id: int | None,
-                      name: str, card_id: int | None = None) -> str:
-    """Erstellt den Preis-Check-Text: Top-5 DE-Angebote, DE/EN/JP-Vergleich,
-    7-Tage-Trend, Deal-Score. Speichert nichts dauerhaft."""
-    if not product_id:
-        return f"💰 *{name}*\n\nKeine Cardmarket-Produkt-ID gefunden."
-
-    lines = [f"💰 *Preis-Check: {name}*", ""]
-
-    # Top-5 günstigste DE-Angebote
-    try:
-        articles = _mkm(context).get_articles(product_id, maxResults=100)
-    except CardmarketError as exc:
-        return f"💰 *{name}*\n\n⚠️ Cardmarket-Fehler: {exc}"
-    de_offers = sorted(filter_de_offers(articles), key=lambda o: o["price"])
-    if de_offers:
-        lines.append("🏪 *Top 5 DE-Angebote:*")
-        for o in de_offers[:5]:
-            lines.append(
-                f"• {o['price']:.2f}€ – {o['condition']} / {o['language']} "
-                f"({o['seller_reputation']:.0f}%)"
-            )
-        lines.append("")
-    else:
-        lines.append("Keine passenden DE-Angebote.")
-        lines.append("")
-
-    # DE/EN/JP-Vergleich
-    lines.append("🌍 *Sprachvergleich:*")
-    for lang_label, lang_id in LANG_QUERY.items():
-        try:
-            lang_articles = _mkm(context).get_articles(
-                product_id, idLanguage=lang_id, maxResults=50
-            )
-        except CardmarketError:
-            lang_articles = []
-        lang_offers = filter_de_offers(lang_articles)
-        med = market_median(lang_offers)
-        if med:
-            cheapest = min(o["price"] for o in lang_offers)
-            lines.append(f"{lang_label}: ab {cheapest:.2f}€ (Median {med:.2f}€)")
-        else:
-            lines.append(f"{lang_label}: keine DE-Angebote")
-    lines.append("")
-
-    # Trend (nur bei Watchlist-Historie verfügbar)
-    if card_id:
-        trend = trend_analyzer.analyze(card_id)
-    else:
-        trend = {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
-                 "trend": "unbekannt", "change_pct": 0.0, "recommendation": "egal"}
-    lines.append(f"📈 Trend: {trend['emoji']} {trend['trend']} "
-                 f"({trend['change_pct']:+.1f}%) | 💡 {trend['recommendation']}")
-
-    # Deal-Score (günstigstes Angebot vs. Markt)
-    if de_offers:
-        market = market_median(de_offers)
-        cheapest = de_offers[0]
-        if market and cheapest["price"] < market:
-            savings = round((market - cheapest["price"]) / market * 100, 1)
-        else:
-            savings = 0.0
-        score_info = deal_scorer.compute_score(
-            savings, cheapest["seller_reputation"], cheapest["condition"],
-            trend["trend"],
-        )
-        lines.append(f"🏆 Deal-Score: {score_info['score']}/100")
-
-    return "\n".join(lines)
-
-
 # ---------------------------------------------------------------- Bilderkennung
 def _cardmarket_url_for_card(name: str, set_name: str | None = None,
                              number: str | None = None, language: str | None = None,
@@ -1260,56 +1090,8 @@ def _pokeprice_text(name: str, set_name: str | None = None,
 
 def _analyze_recognized_card(context: ContextTypes.DEFAULT_TYPE,
                              recog: dict) -> dict:
-    """Marktpreis + Deal-Score für eine erkannte Karte.
-
-    Nutzt Cardmarket, falls Tokens gesetzt sind, sonst pokemontcg.io.
-    """
-    if not config.cardmarket_enabled():
-        return _pokeprice_analysis(recog)
-
-    info = {
-        "product_id": None, "min_price": None, "market_price": None,
-        "trend": {"emoji": trend_analyzer.TREND_EMOJI["unbekannt"],
-                  "trend": "unbekannt", "recommendation": "egal"},
-        "score": None, "best_offer": None,
-    }
-    name = recog.get("card_name", "")
-    if not name:
-        return info
-    try:
-        products = _mkm(context).find_products(name, exact=False)
-    except CardmarketError:
-        return info
-    if not products:
-        return info
-    product_id = products[0].get("idProduct")
-    info["product_id"] = product_id
-
-    try:
-        articles = _mkm(context).get_articles(product_id, maxResults=100)
-    except CardmarketError:
-        return info
-    offers = filter_de_offers(articles)
-    if not offers:
-        return info
-
-    market_price = market_median(offers)
-    cheapest = min(offers, key=lambda o: o["price"])
-    info["min_price"] = cheapest["price"]
-    info["market_price"] = market_price
-    info["best_offer"] = cheapest
-
-    if market_price and cheapest["price"] < market_price:
-        savings_pct = round((market_price - cheapest["price"]) / market_price * 100, 1)
-    else:
-        savings_pct = 0.0
-    # erkannte Karte ist (noch) nicht auf der Watchlist -> Trend "unbekannt"
-    score_info = deal_scorer.compute_score(
-        savings_pct, cheapest["seller_reputation"],
-        cheapest["condition"], "unbekannt",
-    )
-    info["score"] = score_info["score"]
-    return info
+    """Marktpreis + Deal-Score für eine erkannte Karte (TCGdex + CM Price Guide)."""
+    return _pokeprice_analysis(recog)
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1650,18 +1432,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "pc:price":
         import asyncio
         loop = asyncio.get_running_loop()
-        if not config.cardmarket_enabled():
-            text = await loop.run_in_executor(
-                None, _pokeprice_text, recog.get("card_name") or name,
-                recog.get("set_name"), recog.get("card_number"),
-                recog.get("rarity"), recog.get("card_name_en"),
-            )
-        else:
-            card = db.get_card_by_name(name)
-            card_id = card["id"] if card else None
-            text = await loop.run_in_executor(
-                None, _price_check_text, context, product_id, name, card_id
-            )
+        text = await loop.run_in_executor(
+            None, _pokeprice_text, recog.get("card_name") or name,
+            recog.get("set_name"), recog.get("card_number"),
+            recog.get("rarity"), recog.get("card_name_en"),
+        )
         await query.message.reply_text(
             text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True,
         )
@@ -1925,31 +1700,6 @@ def _portfolio_name(portfolio_card_id: int) -> str:
 
 
 # ---------------------------------------------------------------- Scan-Helper
-async def run_scan_and_alert(application: Application) -> list[dict]:
-    """Führt einen Scan aus und sendet alle Alerts an den Haupt-Chat.
-
-    Wird sowohl vom /scan-Command als auch vom Scheduler aufgerufen.
-    Der blockierende Cardmarket-Teil läuft in einem Thread-Executor.
-    """
-    import asyncio
-    mkm = application.bot_data["mkm"]
-    loop = asyncio.get_running_loop()
-    alerts = await loop.run_in_executor(None, scanner.run_scan, mkm)
-
-    chat_id = config.TELEGRAM_CHAT_ID
-    if chat_id:
-        for alert in alerts:
-            try:
-                await application.bot.send_message(
-                    chat_id=chat_id,
-                    text=alert["message"],
-                    disable_web_page_preview=False,
-                )
-            except Exception:
-                log.exception("Alert-Versand fehlgeschlagen")
-    return alerts
-
-
 # ---------------------------------------------------------------- Registry
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     log.error("Unbehandelter Bot-Fehler", exc_info=context.error)
@@ -1965,14 +1715,12 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("restart", cmd_restart))
     application.add_handler(CommandHandler("threshold", cmd_threshold))
     application.add_handler(CommandHandler("score", cmd_score))
-    application.add_handler(CommandHandler("scan", cmd_scan))
     application.add_handler(CommandHandler("sammlung", cmd_sammlung))
     application.add_handler(CommandHandler("wert", cmd_wert))
     application.add_handler(CommandHandler("gekauft", cmd_gekauft))
     application.add_handler(CommandHandler("budget", cmd_budget))
     application.add_handler(CommandHandler("ausgabe", cmd_ausgabe))
     application.add_handler(CommandHandler("briefing", cmd_briefing))
-    application.add_handler(CommandHandler("import", cmd_import))
     # Scalping-Commands
     application.add_handler(CommandHandler("scalp", cmd_scalp))
     application.add_handler(CommandHandler("scalp_add", cmd_scalp_add))

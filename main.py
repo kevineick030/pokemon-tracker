@@ -15,7 +15,6 @@ import briefing
 import cm_priceguide
 import deal_scanner
 import release_calendar
-from cardmarket import CardmarketClient
 
 config.setup_logging()
 log = logging.getLogger("main")
@@ -183,9 +182,6 @@ def main() -> None:
         .post_shutdown(_post_shutdown)
         .build()
     )
-    # Cardmarket-Client in die bot_data legen (von /status, /add, /scan etc. genutzt).
-    # Meldet "offline" solange keine Tokens gesetzt sind — harmlos, aber muss existieren.
-    application.bot_data["mkm"] = CardmarketClient()
 
     bot.register_handlers(application)
 
