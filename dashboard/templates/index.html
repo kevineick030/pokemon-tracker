@@ -67,14 +67,15 @@
         {% for w in winners %}
           <li>
             <a href="{{ url_for('karte', card_id=w.id) }}">{{ w.name }}</a>
-            <span class="trend {{ 'up' if w.gain >= 0 else 'down' }}">
+            <span class="trend up">
               {{ '%+.2f'|format(w.gain) }} €
+              <span class="muted small">({{ '%+.1f'|format(w.pct) }}% · {{ w.basis }})</span>
             </span>
           </li>
         {% endfor %}
       </ul>
     {% else %}
-      <p class="muted">Nicht genug Verlaufsdaten.</p>
+      <p class="muted">Noch keine Karte im Plus.</p>
     {% endif %}
   </section>
 
