@@ -19,4 +19,5 @@ jobs:
             cd /opt/pokemon-tracker
             git pull origin main
             systemctl restart pokemon-tracker
-            echo "✅ Deploy erfolgreich: $(date)"
+            systemctl restart pokemon-dashboard
+            echo "✅ Deploy erfolgreich (Bot + Dashboard): $(date)"
