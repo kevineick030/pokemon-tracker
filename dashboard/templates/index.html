@@ -26,6 +26,17 @@
       {{ '%+.1f'|format(summary.profit_pct) }}%
     </div>
   </div>
+
+  <div class="card stat-big">
+    <div class="stat-label">💶 Realisierter Gewinn (verkauft)</div>
+    {% set rpos = realized.profit >= 0 %}
+    <div class="stat-value {{ 'up' if rpos else 'down' }}">
+      {{ '%+.2f'|format(realized.profit) }} €
+    </div>
+    <div class="muted">
+      {{ realized.count }} verkauft · <a href="{{ url_for('verkauft') }}">Details →</a>
+    </div>
+  </div>
 </section>
 
 <section class="card">

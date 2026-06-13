@@ -30,9 +30,6 @@ import scalp_targets  # noqa: E402
 import profit_calculator  # noqa: E402
 import release_calendar  # noqa: E402
 from database import get_conn  # noqa: E402
-from cardmarket import (  # noqa: E402
-    CardmarketClient, CardmarketError, filter_de_offers, market_median,
-)
 
 from flask import (  # noqa: E402
     Flask, render_template, request, redirect, url_for, flash,
@@ -288,19 +285,47 @@ def sealed_value_history(product_name: str, days: int = 90) -> dict:
     }
 
 
-def live_offers(product_id: int | None, limit: int = 10) -> list[dict]:
-    """Aktuelle DE-Angebote live von Cardmarket (best effort)."""
+def price_guide_info(card) -> dict | None:
+    """Aktuelle Cardmarket-Price-Guide-Preise für eine Sammlungskarte.
+
+    Nutzt die gespeicherte Produkt-ID (schnell, kein Netzaufruf); fehlt sie,
+    wird einmalig über TCGdex aufgelöst. Liefert low/trend/avg7/avg30 + Link.
+    """
+    import cm_priceguide
+    import tcgdex
+
+    product_id = card["cardmarket_product_id"]
+    cm_url = None
     if not product_id:
-        return []
-    try:
-        client = CardmarketClient()
-        articles = client.get_articles(product_id, maxResults=100)
-        offers = filter_de_offers(articles)
-        offers.sort(key=lambda o: o["price"])
-        return offers[:limit]
-    except CardmarketError as exc:
-        log.warning("Live-Angebote nicht verfügbar: %s", exc)
-        return []
+        try:
+            found = tcgdex.lookup(
+                card["card_name"], set_name=card["set_name"],
+                number=card["card_number"], rarity=card["rarity"],
+            )
+        except Exception:
+            found = None
+        if found:
+            product_id = found.get("idProduct")
+            cm_url = found.get("url")
+
+    cm = cm_priceguide.get_price(product_id) if product_id else None
+    if not cm:
+        # Wenigstens einen gefilterten Suchlink anbieten
+        return {
+            "low": None, "trend": None, "avg7": None, "avg30": None,
+            "url": cm_url or tcgdex.cardmarket_search_url(
+                card["card_name"] or "", number=card["card_number"]
+            ),
+        }
+    return {
+        "low": cm.get("low"),
+        "trend": cm.get("trend") or cm.get("avg"),
+        "avg7": cm.get("avg7"),
+        "avg30": cm.get("avg30"),
+        "url": cm_url or tcgdex.cardmarket_search_url(
+            card["card_name"] or "", number=card["card_number"]
+        ),
+    }
 
 
 # ---------------------------------------------------------------- Routes
@@ -321,6 +346,7 @@ def index():
         scalp_active=db.get_scalp_targets(active_only=True),
         recent_restocks=db.get_recent_restocks(hours=48, limit=5),
         profit_pool=scalp_profit_pool(),
+        realized=db.realized_profit(),
         active="index",
     )
 
@@ -353,13 +379,62 @@ def sammlung():
 @app.route("/sammlung/<int:card_id>/delete", methods=["POST"])
 @login_required
 def sammlung_delete(card_id):
-    """Entfernt eine Karte aus der Sammlung (z.B. nach Verkauf)."""
+    """Entfernt eine Karte endgültig (verloren / verschenkt / Fehleingabe)."""
     card = db.get_portfolio_card(card_id)
     if card and db.remove_portfolio_card(card_id):
         flash(f"'{card['card_name']}' aus der Sammlung entfernt.", "success")
     else:
         flash("Karte nicht gefunden.", "error")
     return redirect(url_for("sammlung"))
+
+
+@app.route("/verkauft")
+@login_required
+def verkauft():
+    """Verkaufte Karten: Kauf-/Verkaufspreis, realisierter Gewinn."""
+    cards = []
+    for c in db.get_sold_cards():
+        cost = c["purchase_price"] or 0.0
+        sale = c["sale_price"]
+        profit = (sale - cost) if sale is not None else None
+        cards.append({
+            "id": c["id"],
+            "name": c["card_name"],
+            "set_name": c["set_name"],
+            "purchase_price": cost,
+            "sale_price": sale,
+            "sale_date": (c["sale_date"] or "")[:10],
+            "profit": round(profit, 2) if profit is not None else None,
+        })
+    return render_template(
+        "verkauft.html", cards=cards, summary=db.realized_profit(),
+        active="verkauft",
+    )
+
+
+@app.route("/verkauft/<int:card_id>/preis", methods=["POST"])
+@login_required
+def verkauft_preis(card_id):
+    """Verkaufspreis nachträglich korrigieren."""
+    try:
+        price = float(request.form.get("sale_price", "").replace(",", "."))
+        if price < 0:
+            raise ValueError
+    except ValueError:
+        flash("Bitte einen gültigen Verkaufspreis eingeben.", "error")
+        return redirect(url_for("verkauft"))
+    db.update_portfolio_sale_price(card_id, price)
+    flash("Verkaufspreis aktualisiert.", "success")
+    return redirect(url_for("verkauft"))
+
+
+@app.route("/verkauft/<int:card_id>/zurueck", methods=["POST"])
+@login_required
+def verkauft_zurueck(card_id):
+    """Verkauf rückgängig — Karte zurück in die Sammlung."""
+    db.unmark_portfolio_sold(card_id)
+    flash("Karte zurück in der Sammlung.", "success")
+    return redirect(url_for("verkauft"))
 
 
 @app.route("/karte/<int:card_id>")
@@ -372,7 +447,7 @@ def karte(card_id):
     market_value = latest["market_value"] if latest else None
     gain = (market_value - card["purchase_price"]) if market_value is not None else None
     hist = card_value_history(card_id, 30)
-    offers = live_offers(card["cardmarket_product_id"])
+    guide = price_guide_info(card)
     image_name = os.path.basename(card["image_path"]) if card["image_path"] else None
     return render_template(
         "karte.html",
@@ -382,9 +457,49 @@ def karte(card_id):
         gain=gain,
         chart_labels=hist["labels"],
         chart_values=hist["values"],
-        offers=offers,
+        guide=guide,
+        today=datetime.utcnow().strftime("%Y-%m-%d"),
         active="sammlung",
     )
+
+
+@app.route("/karte/<int:card_id>/preis", methods=["POST"])
+@login_required
+def karte_preis(card_id):
+    """Kaufpreis einer Sammlungskarte korrigieren."""
+    card = db.get_portfolio_card(card_id)
+    if not card:
+        abort(404)
+    try:
+        price = float(request.form.get("purchase_price", "").replace(",", "."))
+        if price < 0:
+            raise ValueError
+    except ValueError:
+        flash("Bitte einen gültigen Kaufpreis eingeben.", "error")
+        return redirect(url_for("karte", card_id=card_id))
+    db.update_portfolio_purchase_price(card_id, price)
+    flash(f"Kaufpreis auf {price:.2f} € gesetzt.", "success")
+    return redirect(url_for("karte", card_id=card_id))
+
+
+@app.route("/karte/<int:card_id>/verkauft", methods=["POST"])
+@login_required
+def karte_verkauft(card_id):
+    """Karte als verkauft markieren (mit Verkaufspreis + Datum)."""
+    card = db.get_portfolio_card(card_id)
+    if not card:
+        abort(404)
+    try:
+        price = float(request.form.get("sale_price", "").replace(",", "."))
+        if price < 0:
+            raise ValueError
+    except ValueError:
+        flash("Bitte einen gültigen Verkaufspreis eingeben.", "error")
+        return redirect(url_for("karte", card_id=card_id))
+    sale_date = request.form.get("sale_date") or None
+    db.mark_portfolio_sold(card_id, price, sale_date)
+    flash(f"'{card['card_name']}' als verkauft markiert ({price:.2f} €).", "success")
+    return redirect(url_for("verkauft"))
 
 
 @app.route("/watchlist")

@@ -27,11 +27,6 @@
        data-value="{{ c.market_value or 0 }}"
        data-gain="{{ c.gain or 0 }}"
        data-date="{{ c.purchase_date }}">
-    <form class="poke-del" method="post"
-          action="{{ url_for('sammlung_delete', card_id=c.id) }}"
-          onsubmit="return confirm('„{{ c.name }}“ aus der Sammlung entfernen? (z. B. nach Verkauf)');">
-      <button type="submit" title="Aus Sammlung entfernen">✕</button>
-    </form>
     <a class="poke-card" href="{{ url_for('karte', card_id=c.id) }}">
       <div class="poke-img">
         {% if c.image %}

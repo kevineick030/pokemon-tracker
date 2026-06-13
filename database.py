@@ -60,7 +60,10 @@ CREATE TABLE IF NOT EXISTS portfolio (
     card_number           TEXT,
     rarity                TEXT,
     image_path            TEXT,
-    notes                 TEXT
+    notes                 TEXT,
+    status                TEXT NOT NULL DEFAULT 'owned',  -- 'owned' | 'sold'
+    sale_price            REAL,
+    sale_date             TEXT
 );
 
 CREATE TABLE IF NOT EXISTS portfolio_value_history (
@@ -245,6 +248,20 @@ def _migrate() -> None:
         if "alert_threshold" not in cols:
             conn.execute("ALTER TABLE cards ADD COLUMN alert_threshold REAL")
             log.info("Migration: cards.alert_threshold ergänzt.")
+
+        # Sammlung: Verkaufs-Status (owned/sold) + Verkaufspreis/-datum
+        pcols = {r["name"] for r in conn.execute("PRAGMA table_info(portfolio)")}
+        if "status" not in pcols:
+            conn.execute(
+                "ALTER TABLE portfolio ADD COLUMN status TEXT NOT NULL DEFAULT 'owned'"
+            )
+            log.info("Migration: portfolio.status ergänzt.")
+        if "sale_price" not in pcols:
+            conn.execute("ALTER TABLE portfolio ADD COLUMN sale_price REAL")
+            log.info("Migration: portfolio.sale_price ergänzt.")
+        if "sale_date" not in pcols:
+            conn.execute("ALTER TABLE portfolio ADD COLUMN sale_date TEXT")
+            log.info("Migration: portfolio.sale_date ergänzt.")
 
 
 def _now() -> str:
@@ -725,10 +742,67 @@ def add_portfolio_card(card_name: str, purchase_price: float,
 
 
 def get_portfolio() -> list[sqlite3.Row]:
+    """Aktuell besessene Sammlungskarten (Status 'owned')."""
     with get_conn() as conn:
         return conn.execute(
-            "SELECT * FROM portfolio ORDER BY card_name"
+            "SELECT * FROM portfolio WHERE status = 'owned' ORDER BY card_name"
         ).fetchall()
+
+
+def get_sold_cards() -> list[sqlite3.Row]:
+    """Verkaufte Karten (Status 'sold'), neueste zuerst."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM portfolio WHERE status = 'sold' "
+            "ORDER BY sale_date DESC, card_name"
+        ).fetchall()
+
+
+def mark_portfolio_sold(portfolio_card_id: int, sale_price: float,
+                        sale_date: str | None = None) -> bool:
+    """Markiert eine Karte als verkauft (bleibt für die Historie erhalten)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE portfolio SET status = 'sold', sale_price = ?, sale_date = ? "
+            "WHERE id = ?",
+            (sale_price, sale_date or _now(), portfolio_card_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_portfolio_sale_price(portfolio_card_id: int, sale_price: float) -> None:
+    """Korrigiert den Verkaufspreis einer bereits verkauften Karte."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE portfolio SET sale_price = ? WHERE id = ?",
+            (sale_price, portfolio_card_id),
+        )
+
+
+def unmark_portfolio_sold(portfolio_card_id: int) -> None:
+    """Holt eine verkaufte Karte zurück in die Sammlung (Verkauf rückgängig)."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE portfolio SET status = 'owned', sale_price = NULL, "
+            "sale_date = NULL WHERE id = ?",
+            (portfolio_card_id,),
+        )
+
+
+def realized_profit() -> dict:
+    """Realisierter Gewinn aus verkauften Karten (Verkaufspreis − Kaufpreis)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, "
+            "       COALESCE(SUM(sale_price), 0) AS sold_total, "
+            "       COALESCE(SUM(sale_price - purchase_price), 0) AS profit "
+            "FROM portfolio WHERE status = 'sold' AND sale_price IS NOT NULL"
+        ).fetchone()
+    return {
+        "count": row["n"],
+        "sold_total": round(row["sold_total"], 2),
+        "profit": round(row["profit"], 2),
+    }
 
 
 def get_portfolio_product_ids() -> set[int]:
@@ -771,9 +845,11 @@ def remove_portfolio_card(portfolio_card_id: int) -> bool:
 
 
 def count_portfolio_by_name(name: str) -> int:
+    """Anzahl aktuell besessener Karten mit diesem Namen (für Doppel-Warnung)."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS c FROM portfolio WHERE LOWER(card_name) = LOWER(?)",
+            "SELECT COUNT(*) AS c FROM portfolio "
+            "WHERE LOWER(card_name) = LOWER(?) AND status = 'owned'",
             (name,),
         ).fetchone()
     return row["c"] if row else 0

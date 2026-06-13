@@ -43,25 +43,48 @@
 </section>
 
 <section class="card">
-  <h2>Aktuelle DE-Angebote (live)</h2>
-  {% if offers %}
-    <table class="data-table">
-      <thead><tr><th>Preis</th><th>Zustand</th><th>Sprache</th><th>Verkäufer</th><th>Bewertung</th></tr></thead>
-      <tbody>
-        {% for o in offers %}
-        <tr>
-          <td><strong>{{ '%.2f'|format(o.price) }} €</strong></td>
-          <td>{{ o.condition }}</td>
-          <td>{{ o.language }}</td>
-          <td>{{ o.seller_name }}</td>
-          <td>{{ '%.0f'|format(o.seller_reputation) }}%</td>
-        </tr>
-        {% endfor %}
-      </tbody>
+  <h2>Cardmarket-Preise (Price Guide)</h2>
+  {% if guide and guide.trend %}
+    <table class="kv">
+      <tr><th>Günstigstes Angebot (EU)</th><td>{{ ('%.2f €'|format(guide.low)) if guide.low else '–' }}</td></tr>
+      <tr><th>Trend (Marktpreis)</th><td>{{ '%.2f €'|format(guide.trend) }}</td></tr>
+      <tr><th>Ø 7 Tage</th><td>{{ ('%.2f €'|format(guide.avg7)) if guide.avg7 else '–' }}</td></tr>
+      <tr><th>Ø 30 Tage</th><td>{{ ('%.2f €'|format(guide.avg30)) if guide.avg30 else '–' }}</td></tr>
     </table>
+    <p class="muted small">EU-weite Cardmarket-Durchschnitte · täglich aktualisiert</p>
   {% else %}
-    <p class="muted">Keine Live-Angebote verfügbar (Produkt unbekannt oder API nicht erreichbar).</p>
+    <p class="muted">Keine Price-Guide-Preise für diese Karte (versiegeltes Produkt oder unbekannt).</p>
   {% endif %}
+  {% if guide and guide.url %}
+    <a class="btn" href="{{ guide.url }}" target="_blank" rel="noopener">→ Auf Cardmarket ansehen (NM, DE)</a>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Aktionen</h2>
+
+  <form method="post" action="{{ url_for('karte_preis', card_id=card.id) }}" class="action-row">
+    <label>Kaufpreis korrigieren:</label>
+    <input type="number" step="0.01" min="0" name="purchase_price"
+           value="{{ '%.2f'|format(card.purchase_price) }}" required>
+    <button type="submit" class="btn">Speichern</button>
+  </form>
+
+  <form method="post" action="{{ url_for('karte_verkauft', card_id=card.id) }}" class="action-row"
+        onsubmit="return confirm('„{{ card.card_name }}“ als verkauft markieren?');">
+    <label>Verkauft für:</label>
+    <input type="number" step="0.01" min="0" name="sale_price"
+           placeholder="Verkaufspreis €"
+           value="{{ '%.2f'|format(guide.trend) if guide and guide.trend else '' }}" required>
+    <input type="date" name="sale_date" value="{{ today }}">
+    <button type="submit" class="btn btn-primary">Als verkauft markieren</button>
+  </form>
+
+  <form method="post" action="{{ url_for('sammlung_delete', card_id=card.id) }}" class="action-row"
+        onsubmit="return confirm('„{{ card.card_name }}“ endgültig entfernen? (verloren / verschenkt / Fehleingabe — kein Verkauf)');">
+    <button type="submit" class="btn btn-danger">Endgültig entfernen</button>
+    <span class="muted small">verloren, verschenkt oder Fehleingabe — wird nicht als Verkauf gezählt</span>
+  </form>
 </section>
 
 {% endblock %}

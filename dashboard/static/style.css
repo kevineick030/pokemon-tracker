@@ -183,6 +183,25 @@ a:hover { text-decoration: underline; }
   border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer;
 }
 .btn:hover { filter: brightness(1.1); }
+.btn-primary { background: var(--up, #4ade80); color: #07210f; }
+.btn-danger { background: var(--down, #f87171); }
+.btn-sm { padding: .35rem .6rem; font-size: .85rem; border-radius: 6px; }
+a.btn { display: inline-block; text-decoration: none; margin-top: .75rem; }
+
+/* Aktions-Formulare (Detailseite) */
+.action-row {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  margin: .6rem 0; padding-bottom: .6rem; border-bottom: 1px solid var(--bg-elev);
+}
+.action-row:last-child { border-bottom: none; }
+.action-row label { color: var(--muted); min-width: 9rem; }
+.action-row input { padding: .5rem .6rem; border-radius: 6px; border: 1px solid var(--bg-elev);
+  background: var(--bg-elev); color: var(--text); }
+.inline-edit { display: flex; gap: .3rem; align-items: center; }
+.inline-edit input { width: 6rem; padding: .35rem .5rem; border-radius: 6px;
+  border: 1px solid var(--bg-elev); background: var(--bg-elev); color: var(--text); }
+.stat-row { display: flex; gap: 1rem; margin-bottom: 1.25rem; }
+.stat-row .stat { flex: 1; }
 
 /* ---------- Flash ---------- */
 .flash { padding: .8rem 1rem; border-radius: 8px; margin-bottom: 1rem; }

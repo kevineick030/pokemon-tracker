@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Verkauft · Pokémon Tracker{% endblock %}
+{% block content %}
+
+<h1>Verkaufte Karten</h1>
+
+<div class="stat-row">
+  <div class="card stat">
+    <div class="muted">Realisierter Gewinn</div>
+    <div class="stat-value {{ 'up' if summary.profit >= 0 else 'down' }}">
+      {{ '%+.2f'|format(summary.profit) }} €
+    </div>
+    <div class="muted">aus {{ summary.count }} Verkauf/Verkäufen · Erlös {{ '%.2f'|format(summary.sold_total) }} €</div>
+  </div>
+</div>
+
+{% if cards %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Karte</th><th>Set</th><th>Kaufpreis</th><th>Verkaufspreis</th>
+      <th>Gewinn</th><th>Datum</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in cards %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td class="muted">{{ c.set_name or '—' }}</td>
+      <td>{{ '%.2f'|format(c.purchase_price) }} €</td>
+      <td>
+        <form method="post" action="{{ url_for('verkauft_preis', card_id=c.id) }}" class="inline-edit">
+          <input type="number" step="0.01" min="0" name="sale_price"
+                 value="{{ '%.2f'|format(c.sale_price) if c.sale_price is not none else '' }}">
+          <button type="submit" class="btn btn-sm" title="Verkaufspreis speichern">✓</button>
+        </form>
+      </td>
+      <td>
+        {% if c.profit is not none %}
+          <span class="trend {{ 'up' if c.profit >= 0 else 'down' }}">{{ '%+.2f'|format(c.profit) }} €</span>
+        {% else %}–{% endif %}
+      </td>
+      <td class="muted">{{ c.sale_date or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('verkauft_zurueck', card_id=c.id) }}"
+              onsubmit="return confirm('„{{ c.name }}“ zurück in die Sammlung holen?');">
+          <button type="submit" class="btn btn-sm" title="Verkauf rückgängig">↩</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Noch keine verkauften Karten. Markiere eine Karte über ihre Detailseite als verkauft.</p>
+{% endif %}
+
+{% endblock %}
