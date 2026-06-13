@@ -21,14 +21,24 @@ log = logging.getLogger(__name__)
 def fetch_market_value(card) -> float | None:
     """Aktueller Marktpreis einer Sammlungskarte.
 
-    Lookup-Kette (gleich wie bot._pokeprice_analysis):
-      1. TCGdex → idProduct ermitteln
-      2. idProduct → lokaler CM Price Guide (Trend-Preis)
+    Lookup-Kette:
+      1. Gespeicherte cardmarket_product_id → lokaler CM Price Guide
+         (schnell, kein Netzaufruf — der bevorzugte Weg)
+      2. Sonst: TCGdex → idProduct → lokaler CM Price Guide
       3. Fallback: TCGdex EU-Trend direkt
     """
     name = card["card_name"]
     if not name:
         return None
+
+    # 1) Gespeicherte Produkt-ID direkt im lokalen Price Guide nachschlagen
+    stored_id = card["cardmarket_product_id"]
+    if stored_id:
+        cm = cm_priceguide.get_price(stored_id)
+        if cm and (cm.get("trend") or cm.get("avg")):
+            return float(cm.get("trend") or cm.get("avg"))
+
+    # 2) Keine ID gespeichert / kein Preis gefunden → über TCGdex auflösen
     result = tcgdex.lookup(
         name,
         set_name=card["set_name"],
@@ -38,15 +48,13 @@ def fetch_market_value(card) -> float | None:
     if not result:
         return None
 
-    # 1) Lokaler CM Price Guide via idProduct (bevorzugt)
     product_id = result.get("idProduct")
     if product_id:
         cm = cm_priceguide.get_price(product_id)
         if cm and (cm.get("trend") or cm.get("avg")):
-            value = cm.get("trend") or cm.get("avg")
-            return float(value)
+            return float(cm.get("trend") or cm.get("avg"))
 
-    # 2) Fallback: TCGdex EU-Preis
+    # 3) Fallback: TCGdex EU-Preis direkt
     value = result.get("trend") or result.get("avg")
     return float(value) if value is not None else None
 

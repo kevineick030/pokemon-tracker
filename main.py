@@ -122,8 +122,10 @@ def setup_scheduler(application: Application) -> AsyncIOScheduler:
         max_instances=1, coalesce=True,
     )
     scheduler.add_job(
+        # Direkt nach dem Price-Guide-Download (06:00), damit die Sammlung
+        # mit den frischen Tagespreisen bewertet wird (nicht denen vom Vortag).
         job_portfolio_valuation,
-        CronTrigger(hour=config.PORTFOLIO_VALUATION_HOUR, minute=0),
+        CronTrigger(hour=config.CM_PRICE_GUIDE_DOWNLOAD_HOUR, minute=10),
         args=[application], id="portfolio_valuation",
         name="Portfolio-Wertaktualisierung",
     )
