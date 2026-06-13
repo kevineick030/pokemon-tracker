@@ -859,6 +859,14 @@ def _build_price_keyboard(is_sealed: bool) -> InlineKeyboardMarkup:
     ])
 
 
+def _build_profile_keyboard() -> InlineKeyboardMarkup:
+    """Profil-Auswahl beim Sammlung-Hinzufügen (Kevin/Magnus …)."""
+    btns = [InlineKeyboardButton(f"👤 {p}", callback_data=f"pc:prof:{p}")
+            for p in config.PROFILES]
+    rows = [btns[i:i + 2] for i in range(0, len(btns), 2)]
+    return InlineKeyboardMarkup(rows)
+
+
 def _build_condition_keyboard() -> InlineKeyboardMarkup:
     conds = [("NM", "pc:cd_NM"), ("LP", "pc:cd_LP"),
              ("MP", "pc:cd_MP"), ("HP", "pc:cd_HP")]
@@ -1498,42 +1506,79 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # --- ➕ Sammlung: Karte erstellen + Preisauswahl per Button ---
+    # --- ➕ Sammlung: erst Profil fragen (Kevin/Magnus), dann Karte anlegen ---
     if data == "pc:collect":
-        existing_count = db.count_portfolio_by_name(name)
-        card_id = db.add_portfolio_card(
-            card_name=name,
-            purchase_price=0.0,
-            product_id=product_id,
-            condition=recog.get("condition_estimate"),
-            language=recog.get("language"),
-            set_name=recog.get("set_name"),
-            card_number=recog.get("card_number"),
-            rarity=recog.get("rarity"),
-        )
-        if temp_path:
-            final_path = os.path.join(
-                str(config.CARD_IMAGES_DIR), f"{card_id}_{int(time.time())}.jpg"
+        if len(config.PROFILES) <= 1:
+            await _finish_collect(query, context, config.DEFAULT_PROFILE)
+        else:
+            await query.message.reply_text(
+                f"👤 In wessen Sammlung soll *{name}* rein?",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=_build_profile_keyboard(),
             )
-            try:
-                os.replace(temp_path, final_path)
-                db.set_portfolio_image_path(card_id, final_path)
-            except OSError:
-                log.warning("Foto konnte nicht dauerhaft gespeichert werden.")
-        if analysis.get("market_price") is not None:
-            db.add_portfolio_value(card_id, analysis["market_price"])
-        context.user_data["awaiting_price"] = card_id
-        context.user_data["pending_is_sealed"] = is_sealed
-        context.user_data.pop("pending_card", None)
-        await _disable_buttons(query)
-        market = analysis.get("market_price")
-        dup_line = f"\n⚠️ Bereits {existing_count}x in deiner Sammlung!" if existing_count > 0 else ""
-        market_line = f"\n💰 Marktwert: {market:.2f}€" if market else ""
+        return
+
+    # --- 👤 Profil gewählt → Karte in dessen Sammlung anlegen ---
+    if data.startswith("pc:prof:"):
+        owner = data.split(":", 2)[2]
+        if owner not in config.PROFILES:
+            await query.message.reply_text("⚠️ Unbekanntes Profil.")
+            return
+        await _finish_collect(query, context, owner)
+        return
+
+
+async def _finish_collect(query, context: ContextTypes.DEFAULT_TYPE, owner: str) -> None:
+    """Legt die vorgemerkte Karte in der Sammlung des Profils `owner` an
+    und fragt anschließend nach dem Kaufpreis."""
+    pending = context.user_data.get("pending_card")
+    if not pending:
         await query.message.reply_text(
-            f"✅ {name} vorgemerkt.{dup_line}{market_line}\n\n💶 Was hast du bezahlt?",
-            reply_markup=_build_price_keyboard(is_sealed),
+            "⌛ Diese Karte ist nicht mehr aktiv — schick das Foto bitte neu."
         )
         return
+    recog = pending["recog"]
+    analysis = pending["analysis"]
+    temp_path = pending.get("temp_path")
+    name = recog.get("card_name", "Unbekanntes Produkt")
+    product_id = analysis.get("product_id")
+    is_sealed = image_recognition.is_sealed(recog.get("product_type"))
+
+    existing_count = db.count_portfolio_by_name(name, owner=owner)
+    card_id = db.add_portfolio_card(
+        card_name=name,
+        purchase_price=0.0,
+        product_id=product_id,
+        condition=recog.get("condition_estimate"),
+        language=recog.get("language"),
+        set_name=recog.get("set_name"),
+        card_number=recog.get("card_number"),
+        rarity=recog.get("rarity"),
+        owner=owner,
+    )
+    if temp_path:
+        final_path = os.path.join(
+            str(config.CARD_IMAGES_DIR), f"{card_id}_{int(time.time())}.jpg"
+        )
+        try:
+            os.replace(temp_path, final_path)
+            db.set_portfolio_image_path(card_id, final_path)
+        except OSError:
+            log.warning("Foto konnte nicht dauerhaft gespeichert werden.")
+    if analysis.get("market_price") is not None:
+        db.add_portfolio_value(card_id, analysis["market_price"])
+    context.user_data["awaiting_price"] = card_id
+    context.user_data["pending_is_sealed"] = is_sealed
+    context.user_data.pop("pending_card", None)
+    await _disable_buttons(query)
+    market = analysis.get("market_price")
+    dup_line = f"\n⚠️ {owner} hat diese Karte bereits {existing_count}x!" if existing_count > 0 else ""
+    market_line = f"\n💰 Marktwert: {market:.2f}€" if market else ""
+    await query.message.reply_text(
+        f"✅ {name} → Sammlung *{owner}*.{dup_line}{market_line}\n\n💶 Was hast du bezahlt?",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_build_price_keyboard(is_sealed),
+    )
 
 
 def _safe_remove(path: str) -> None:

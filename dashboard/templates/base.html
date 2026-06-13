@@ -12,6 +12,14 @@
 {% if current_user.is_authenticated %}
   <header class="topbar">
     <div class="brand">🃏 Pokémon Tracker</div>
+    {% if profiles and profiles|length > 1 %}
+    <div class="profile-switch" title="Sammlungs-Profil wechseln">
+      {% for p in profiles %}
+        <a href="{{ url_for('set_profile', name=p) }}"
+           class="profile-chip {{ 'active' if p == active_profile }}">👤 {{ p }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
     <nav class="nav">
       <a href="{{ url_for('index') }}" class="{{ 'active' if active=='index' }}">Übersicht</a>
       <a href="{{ url_for('sammlung') }}" class="{{ 'active' if active=='sammlung' }}">Sammlung</a>

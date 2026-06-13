@@ -65,6 +65,11 @@ SCAN_INTERVAL_MINUTES = 30
 BRIEFING_HOUR = 9          # tägliches Briefing 09:00
 PORTFOLIO_VALUATION_HOUR = 2  # tägliche Wertaktualisierung 02:00
 
+# Sammlungs-Profile (nur die Sammlung ist pro Profil getrennt).
+# Erstes Profil = Standard (z.B. beim Bot-Sammlung-Flow vorausgewählt).
+PROFILES = [p.strip() for p in os.getenv("PROFILES", "Kevin,Magnus").split(",") if p.strip()]
+DEFAULT_PROFILE = PROFILES[0] if PROFILES else "Kevin"
+
 DEFAULT_SAVINGS_THRESHOLD = 20.0   # % Mindestersparnis für "Top-Deal"-Markierung
 DEFAULT_MIN_SCORE = 60             # Alert ab diesem Deal-Score
 DEFAULT_WATCHLIST_ALERT_THRESHOLD = 15.0  # Default-Ersparnis (%) beim Foto-Watchlist-Flow

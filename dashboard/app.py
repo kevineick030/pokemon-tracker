@@ -33,7 +33,7 @@ from database import get_conn  # noqa: E402
 
 from flask import (  # noqa: E402
     Flask, render_template, request, redirect, url_for, flash,
-    send_from_directory, abort,
+    send_from_directory, abort, session,
 )
 from flask_login import (  # noqa: E402
     LoginManager, UserMixin, login_user, logout_user, login_required,
@@ -129,6 +129,27 @@ def security_headers(resp):
     return resp
 
 
+# ---------------------------------------------------------------- Profile
+def active_profile() -> str:
+    """Aktuell im Dashboard gewähltes Sammlungs-Profil (Session)."""
+    p = session.get("profile")
+    return p if p in config.PROFILES else config.DEFAULT_PROFILE
+
+
+@app.context_processor
+def inject_profiles():
+    """Stellt Profil-Liste + aktives Profil allen Templates bereit (Nav-Umschalter)."""
+    return {"profiles": config.PROFILES, "active_profile": active_profile()}
+
+
+@app.route("/profil/<name>")
+@login_required
+def set_profile(name):
+    if name in config.PROFILES:
+        session["profile"] = name
+    return redirect(request.referrer or url_for("index"))
+
+
 # ---------------------------------------------------------------- Datenhelfer
 def _rarity_class(rarity: str | None) -> str:
     r = (rarity or "").lower()
@@ -141,23 +162,29 @@ def _rarity_class(rarity: str | None) -> str:
     return "other"
 
 
-def daily_portfolio_values(days: int = 30) -> dict:
-    """Tagessummen des Sammlungs-Marktwerts der letzten `days` Tage."""
+def daily_portfolio_values(days: int = 30, owner: str | None = None) -> dict:
+    """Tagessummen des Sammlungs-Marktwerts der letzten `days` Tage (pro Profil)."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    sql = (
+        "SELECT substr(h.timestamp, 1, 10) AS day, SUM(h.market_value) AS total "
+        "FROM portfolio_value_history h "
+        "JOIN portfolio p ON p.id = h.portfolio_card_id "
+        "WHERE h.timestamp >= ?"
+    )
+    params: list = [cutoff]
+    if owner:
+        sql += " AND p.owner = ?"
+        params.append(owner)
+    sql += " GROUP BY day ORDER BY day"
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT substr(timestamp, 1, 10) AS day, SUM(market_value) AS total "
-            "FROM portfolio_value_history WHERE timestamp >= ? "
-            "GROUP BY day ORDER BY day",
-            (cutoff,),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return {
         "labels": [r["day"] for r in rows],
         "values": [round(r["total"] or 0, 2) for r in rows],
     }
 
 
-def top_winners(days: int = 7, n: int = 3) -> list[dict]:
+def top_winners(days: int = 7, n: int = 3, owner: str | None = None) -> list[dict]:
     """Top-N Karten nach Wertzuwachs.
 
     Bevorzugt die 7-Tage-Veränderung; gibt es noch keine 7-Tage-Historie
@@ -166,7 +193,7 @@ def top_winners(days: int = 7, n: int = 3) -> list[dict]:
     sinnvolle Werte zeigt.
     """
     winners = []
-    for card in db.get_portfolio():
+    for card in db.get_portfolio(owner):
         latest = db.get_latest_portfolio_value(card["id"])
         if not latest or latest["market_value"] is None:
             continue
@@ -329,21 +356,22 @@ def price_guide_info(card) -> dict | None:
 @app.route("/")
 @login_required
 def index():
-    summ = portfolio.summary()
-    change = portfolio.value_change_vs(days_ago=7)
-    chart = daily_portfolio_values(30)
+    prof = active_profile()
+    summ = portfolio.summary(prof)
+    change = portfolio.value_change_vs(days_ago=7, owner=prof)
+    chart = daily_portfolio_values(30, prof)
     return render_template(
         "index.html",
         summary=summ,
         change=change,
         chart_labels=chart["labels"],
         chart_values=chart["values"],
-        winners=top_winners(7, 3),
+        winners=top_winners(7, 3, prof),
         alerts=recent_alerts(5),
         scalp_active=db.get_scalp_targets(active_only=True),
         recent_restocks=db.get_recent_restocks(hours=48, limit=5),
         profit_pool=scalp_profit_pool(),
-        realized=db.realized_profit(),
+        realized=db.realized_profit(prof),
         active="index",
     )
 
@@ -351,9 +379,10 @@ def index():
 @app.route("/sammlung")
 @login_required
 def sammlung():
-    summ = portfolio.summary()
+    prof = active_profile()
+    summ = portfolio.summary(prof)
     cards = []
-    for card in db.get_portfolio():
+    for card in db.get_portfolio(prof):
         item = next((i for i in summ["items"] if i["id"] == card["id"]), {})
         image_name = os.path.basename(card["image_path"]) if card["image_path"] else None
         cards.append({
@@ -389,8 +418,9 @@ def sammlung_delete(card_id):
 @login_required
 def verkauft():
     """Verkaufte Karten: Kauf-/Verkaufspreis, realisierter Gewinn."""
+    prof = active_profile()
     cards = []
-    for c in db.get_sold_cards():
+    for c in db.get_sold_cards(prof):
         cost = c["purchase_price"] or 0.0
         sale = c["sale_price"]
         profit = (sale - cost) if sale is not None else None
@@ -404,7 +434,7 @@ def verkauft():
             "profit": round(profit, 2) if profit is not None else None,
         })
     return render_template(
-        "verkauft.html", cards=cards, summary=db.realized_profit(),
+        "verkauft.html", cards=cards, summary=db.realized_profit(prof),
         active="verkauft",
     )
 

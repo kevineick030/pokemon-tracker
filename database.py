@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS portfolio (
     notes                 TEXT,
     status                TEXT NOT NULL DEFAULT 'owned',  -- 'owned' | 'sold'
     sale_price            REAL,
-    sale_date             TEXT
+    sale_date             TEXT,
+    owner                 TEXT NOT NULL DEFAULT 'Kevin'   -- Sammlungs-Profil
 );
 
 CREATE TABLE IF NOT EXISTS portfolio_value_history (
@@ -262,6 +263,13 @@ def _migrate() -> None:
         if "sale_date" not in pcols:
             conn.execute("ALTER TABLE portfolio ADD COLUMN sale_date TEXT")
             log.info("Migration: portfolio.sale_date ergänzt.")
+        if "owner" not in pcols:
+            conn.execute(
+                "ALTER TABLE portfolio ADD COLUMN owner TEXT NOT NULL "
+                f"DEFAULT '{config.DEFAULT_PROFILE}'"
+            )
+            log.info("Migration: portfolio.owner ergänzt (Default %s).",
+                     config.DEFAULT_PROFILE)
 
 
 def _now() -> str:
@@ -727,31 +735,47 @@ def add_portfolio_card(card_name: str, purchase_price: float,
                        set_name: str | None = None, card_number: str | None = None,
                        rarity: str | None = None, image_path: str | None = None,
                        notes: str | None = None,
-                       purchase_date: str | None = None) -> int:
+                       purchase_date: str | None = None,
+                       owner: str | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO portfolio "
             "(card_name, cardmarket_product_id, purchase_price, purchase_date, "
-            " condition, language, set_name, card_number, rarity, image_path, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " condition, language, set_name, card_number, rarity, image_path, notes, owner) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (card_name, product_id, purchase_price,
              purchase_date or _now(), condition, language, set_name,
-             card_number, rarity, image_path, notes),
+             card_number, rarity, image_path, notes,
+             owner or config.DEFAULT_PROFILE),
         )
         return cur.lastrowid
 
 
-def get_portfolio() -> list[sqlite3.Row]:
-    """Aktuell besessene Sammlungskarten (Status 'owned')."""
+def get_portfolio(owner: str | None = None) -> list[sqlite3.Row]:
+    """Aktuell besessene Sammlungskarten (Status 'owned').
+
+    owner=None → alle Profile (z.B. für die tägliche Bewertung).
+    owner='Kevin' → nur dieses Profil (Dashboard-Ansicht).
+    """
     with get_conn() as conn:
+        if owner:
+            return conn.execute(
+                "SELECT * FROM portfolio WHERE status = 'owned' AND owner = ? "
+                "ORDER BY card_name", (owner,)
+            ).fetchall()
         return conn.execute(
             "SELECT * FROM portfolio WHERE status = 'owned' ORDER BY card_name"
         ).fetchall()
 
 
-def get_sold_cards() -> list[sqlite3.Row]:
+def get_sold_cards(owner: str | None = None) -> list[sqlite3.Row]:
     """Verkaufte Karten (Status 'sold'), neueste zuerst."""
     with get_conn() as conn:
+        if owner:
+            return conn.execute(
+                "SELECT * FROM portfolio WHERE status = 'sold' AND owner = ? "
+                "ORDER BY sale_date DESC, card_name", (owner,)
+            ).fetchall()
         return conn.execute(
             "SELECT * FROM portfolio WHERE status = 'sold' "
             "ORDER BY sale_date DESC, card_name"
@@ -789,15 +813,20 @@ def unmark_portfolio_sold(portfolio_card_id: int) -> None:
         )
 
 
-def realized_profit() -> dict:
+def realized_profit(owner: str | None = None) -> dict:
     """Realisierter Gewinn aus verkauften Karten (Verkaufspreis − Kaufpreis)."""
+    sql = (
+        "SELECT COUNT(*) AS n, "
+        "       COALESCE(SUM(sale_price), 0) AS sold_total, "
+        "       COALESCE(SUM(sale_price - purchase_price), 0) AS profit "
+        "FROM portfolio WHERE status = 'sold' AND sale_price IS NOT NULL"
+    )
+    params: tuple = ()
+    if owner:
+        sql += " AND owner = ?"
+        params = (owner,)
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n, "
-            "       COALESCE(SUM(sale_price), 0) AS sold_total, "
-            "       COALESCE(SUM(sale_price - purchase_price), 0) AS profit "
-            "FROM portfolio WHERE status = 'sold' AND sale_price IS NOT NULL"
-        ).fetchone()
+        row = conn.execute(sql, params).fetchone()
     return {
         "count": row["n"],
         "sold_total": round(row["sold_total"], 2),
@@ -844,14 +873,16 @@ def remove_portfolio_card(portfolio_card_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def count_portfolio_by_name(name: str) -> int:
+def count_portfolio_by_name(name: str, owner: str | None = None) -> int:
     """Anzahl aktuell besessener Karten mit diesem Namen (für Doppel-Warnung)."""
+    sql = ("SELECT COUNT(*) AS c FROM portfolio "
+           "WHERE LOWER(card_name) = LOWER(?) AND status = 'owned'")
+    params: tuple = (name,)
+    if owner:
+        sql += " AND owner = ?"
+        params = (name, owner)
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS c FROM portfolio "
-            "WHERE LOWER(card_name) = LOWER(?) AND status = 'owned'",
-            (name,),
-        ).fetchone()
+        row = conn.execute(sql, params).fetchone()
     return row["c"] if row else 0
 
 

@@ -5,7 +5,7 @@
 {% set up = change.change >= 0 %}
 <section class="hero-grid">
   <div class="card stat-big">
-    <div class="stat-label">Gesamtwert Sammlung</div>
+    <div class="stat-label">Gesamtwert Sammlung · {{ active_profile }}</div>
     <div class="stat-value">
       {{ '%.2f'|format(summary.total_market) }} €
       <span class="trend {{ 'up' if up else 'down' }}">

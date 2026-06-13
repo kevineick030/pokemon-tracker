@@ -72,9 +72,12 @@ def update_all_values() -> int:
     return updated
 
 
-def summary() -> dict:
-    """Berechnet Gesamtwert, Einstandswert, Gewinn/Verlust und Top-Karte."""
-    cards = db.get_portfolio()
+def summary(owner: str | None = None) -> dict:
+    """Berechnet Gesamtwert, Einstandswert, Gewinn/Verlust und Top-Karte.
+
+    owner=None → alle Profile; sonst nur das angegebene Sammlungs-Profil.
+    """
+    cards = db.get_portfolio(owner)
     total_market = 0.0
     total_cost = 0.0
     items = []
@@ -114,9 +117,9 @@ def summary() -> dict:
     }
 
 
-def value_change_vs(days_ago: int = 7) -> dict:
+def value_change_vs(days_ago: int = 7, owner: str | None = None) -> dict:
     """Gesamtwertveränderung gegenüber vor `days_ago` Tagen."""
-    cards = db.get_portfolio()
+    cards = db.get_portfolio(owner)
     now_total = 0.0
     then_total = 0.0
     for card in cards:
