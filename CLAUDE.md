@@ -4,7 +4,7 @@
 Kevin ist Endnutzer mit ADHS und will keine Deployment-Überraschungen. Für JEDE Session (lokal wie Cloud):
 
 1. **Zuerst diese CLAUDE.md + START-HIER.md lesen.**
-2. **Direkt auf `main` arbeiten.** Push nach `main` = live/produktiv. **KEINE Preview-Branches oder Pull Requests** erstellen, außer Kevin fragt ausdrücklich danach.
+2. **Direkt auf `main` arbeiten — und die KI veröffentlicht selbst.** Wenn eine Änderung fertig & getestet ist, **committet und pusht die KI direkt nach `main`** (`git add -A && git commit -m "…" && git push`). Kevin muss dafür **keinen Ordner öffnen und keine `.bat` starten**. Push nach `main` = **live/produktiv** → danach in einem Satz sagen, was veröffentlicht wurde. **KEINE Preview-Branches oder Pull Requests**, außer Kevin fragt ausdrücklich danach. ⚠️ Die interaktive `deploy.bat` **nicht** selbst im Terminal ausführen (sie fragt nach Eingaben und bleibt hängen) — die ist nur Kevins Ein-Klick-Variante.
 3. **Deployment:** Push nach `main` → Strato-Server `87.106.255.195` zieht automatisch. Daten liegen in SQLite (`pokemon_tracker.db`).
 4. **Doku aktuell halten (PFLICHT):** Nach JEDER nennenswerten Code-Änderung diese CLAUDE.md **im selben Commit** mit aktualisieren (neue Features, geänderte Abläufe, Deploy, Config). Veraltete Doku ist schlimmer als keine. Auch was Kevin als dauerhafte Regel sagt, kommt hierher – nicht nur in den Chat.
 5. **Einfache Sprache, keine unnötigen Fachbegriffe.**
