@@ -15,7 +15,7 @@ Kevin ist Endnutzer mit ADHS und will keine Deployment-Überraschungen. Für JED
 > wie es betrieben/bedient wird und was noch offen ist. Bitte bei größeren
 > Änderungen aktuell halten.
 
-**Letzter Stand:** 2026-06-04 · Sprache mit dem User: **Deutsch** (Einsteiger,
+**Letzter Stand:** 2026-06-13 · Sprache mit dem User: **Deutsch** (Einsteiger,
 nicht-technisch → einfache Schritt-für-Schritt-Erklärungen).
 
 ---
@@ -81,11 +81,16 @@ Sammlung/Watchlist legen.** Fokus: **deutsche Karten + Produkte, Cardmarket-Prei
 - **Versiegelte Produkte** (Tins/ETBs/Displays) haben **keine Preise** im CM Price Guide
   (der enthält nur Einzelkarten) → Preis zeigt `–`, manueller Kaufpreis beim Sammlung-Eintrag.
 - Dashboard läuft nur über **HTTP** (Passwort, aber unverschlüsselt).
-- Watchlist-Alerts: Scanner-Job läuft alle 30 Min, aber Cardmarket-API gibt 403 → keine Alerts.
+- (Watchlist-Alerts laufen inzwischen über den neuen Deal-Scanner, siehe 🟢 unten — nicht mehr über die blockierte Cardmarket-API.)
+
+### 🟢 Schnäppchen-Scanner (NEU 2026-06-13 — neu gebaut, OHNE Cardmarket)
+- **`deal_scanner.py`** (täglich 06:05, nach Price-Guide-Download): cacht SIR/IR-Karten per
+  TCGdex-Rarity-Endpunkt, vergleicht `low` vs. `trend` aus dem CM Price Guide und schickt die
+  Top-Deals als Telegram-Nachricht. Deal-Bewertung 0–100 via `deal_scorer.py`.
+- **Watchlist-Alerts** laufen jetzt ebenfalls über `deal_scanner.check_watchlist_alerts`
+  (nicht mehr über die blockierte Cardmarket-API → 403-Problem umgangen).
 
 ### 🔴 Läuft nicht / kaputt
-- **Automatischer Schnäppchen-Scanner + Alerts** → Cardmarket 403, keine Alerts.
-  TODO: auf TCGdex/CM-Price-Guide umstellen.
 - **Scalping** (retail_monitor/hotstock): Händler-Selektoren ungetestete Platzhalter,
   Sealed-Preise fehlen → keine echten Restock-Alerts. Jobs laufen, tun nichts Nützliches.
 - **Cardmarket-API**: nicht verbunden (keine Tokens). Sobald 4 Tokens in `.env`,
@@ -135,9 +140,13 @@ cm_priceguide.py     NEU: Cardmarket Price Guide Download + lokaler Lookup
                      download_and_import() / get_price(product_id) / is_ready()
 pokeprice.py         ALT (pokemontcg.io) — nicht mehr genutzt, bleibt liegen
 cardmarket.py        Cardmarket-API (nur aktiv wenn Tokens gesetzt, derzeit leer)
-scanner.py           Watchlist-Scan (Cardmarket → 403, tot)
+deal_scanner.py      NEU (06-13): täglicher Schnäppchen-Scanner (TCGdex+CM Price Guide, 06:05) + Watchlist-Alerts
+deal_scorer.py       NEU: Deal-Bewertung 0–100 (Ersparnis 40 / Verkäufer 25 / Zustand 20 / Trend)
+briefing.py          Baut die Texte fürs tägliche Briefing (09:00)
+ai_chat.py           KI-Chat (Claude Haiku, Freitext-Fragen)
+trend_analyzer.py    Preis-Trend-Analyse (steigend / fallend / stabil)
 portfolio.py         Sammlungswert: TCGdex→CM-Price-Guide, tägl. 02:00
-profit_calculator.py / sealed_prices.py / scalp_targets.py /
+profit_calculator.py / scalp_targets.py /
 retail_monitor.py / hotstock_monitor.py / restock_alerts.py /
 release_calendar.py  → Scalping-Modul (teils nicht funktional)
 dashboard/           Flask-Dashboard (app.py + templates/ + static/)
@@ -161,10 +170,10 @@ dashboard/           Flask-Dashboard (app.py + templates/ + static/)
 ### Scheduler-Jobs (main.py)
 | Job | Wann | Status |
 |-----|------|--------|
-| Watchlist-Scan | alle 30 Min | 🔴 Cardmarket 403 |
+| CM Price Guide Download | 06:00 | 🟢 |
+| Deal-Scanner + Watchlist-Alerts | 06:05 | 🟢 NEU (TCGdex+CM Price Guide) |
 | Tägliches Briefing | 09:00 | 🟢 |
 | Portfolio-Bewertung | 02:00 | 🟢 TCGdex+CM-Price-Guide |
-| CM Price Guide Download | 06:00 | 🟢 NEU |
 | Retail-Monitor | alle 120s | 🔴 Platzhalter-Selektoren |
 | HotStock-Monitor | alle 60s | 🔴 |
 | Sealed-Preise (CM) | alle 6h | 🔴 CM 403 |
@@ -183,8 +192,8 @@ dashboard/           Flask-Dashboard (app.py + templates/ + static/)
    (Scan funktioniert, ✅ Sammlung-Button vorhanden → testen ob es nun geht nach Bugfix).
 6. **Sammlung-Extras:** Doppelte-Warnung beim Scannen, Set-Fortschritt (`8/18 SIR`),
    CSV/Excel-Export, Quick-Sell-Schätzung nach Gebühren.
-7. **Watchlist-Scanner auf TCGdex/CM** umstellen → Preis-Drop-Alerts wieder aktiv.
-8. **Tote Jobs aufräumen**: Sealed-Preis-Job, Watchlist-Scanner (beide CM-abhängig).
+7. ✅ **Watchlist-Scanner auf TCGdex/CM umgestellt (ERLEDIGT, `deal_scanner.py`)** → Schnäppchen- + Watchlist-Alerts wieder aktiv.
+8. **Tote Scalping-Jobs aufräumen**: retail_monitor / hotstock_monitor / restock_alerts (Platzhalter-Selektoren).
 
 ---
 
