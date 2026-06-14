@@ -1,5 +1,16 @@
 # CLAUDE.md — Projekt-Statusdokument (Pokémon Karten Tracker)
 
+## 🚦 Regeln für KI-Sessions (immer befolgen)
+Kevin ist Endnutzer mit ADHS und will keine Deployment-Überraschungen. Für JEDE Session (lokal wie Cloud):
+
+1. **Zuerst diese CLAUDE.md + START-HIER.md lesen.**
+2. **Direkt auf `main` arbeiten.** Push nach `main` = live/produktiv. **KEINE Preview-Branches oder Pull Requests** erstellen, außer Kevin fragt ausdrücklich danach.
+3. **Deployment:** Push nach `main` → Strato-Server `87.106.255.195` zieht automatisch. Daten liegen in SQLite (`pokemon_tracker.db`).
+4. **Dauerhaftes Wissen hierher schreiben:** Wenn Kevin etwas erklärt, das künftig gelten soll, in diese CLAUDE.md aufnehmen – nicht nur im Chat lassen.
+5. **Einfache Sprache, keine unnötigen Fachbegriffe.**
+
+---
+
 > Zweck: Damit eine **neue Session** sofort weiß, was das Projekt ist, was läuft,
 > wie es betrieben/bedient wird und was noch offen ist. Bitte bei größeren
 > Änderungen aktuell halten.
