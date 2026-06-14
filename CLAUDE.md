@@ -5,7 +5,7 @@ Kevin ist Endnutzer mit ADHS und will keine Deployment-Überraschungen. Für JED
 
 1. **Zuerst diese CLAUDE.md + START-HIER.md lesen.**
 2. **Direkt auf `main` arbeiten — und die KI veröffentlicht selbst.** Wenn eine Änderung fertig & getestet ist, **committet und pusht die KI direkt nach `main`** (`git add -A && git commit -m "…" && git push`). Kevin muss dafür **keinen Ordner öffnen und keine `.bat` starten**. Push nach `main` = **live/produktiv** → danach in einem Satz sagen, was veröffentlicht wurde. **KEINE Preview-Branches oder Pull Requests**, außer Kevin fragt ausdrücklich danach. ⚠️ Die interaktive `deploy.bat` **nicht** selbst im Terminal ausführen (sie fragt nach Eingaben und bleibt hängen) — die ist nur Kevins Ein-Klick-Variante.
-3. **Deployment:** Push nach `main` → Strato-Server `87.106.255.195` zieht automatisch. Daten liegen in SQLite (`pokemon_tracker.db`).
+3. **Deployment:** Push nach `main` → die **GitHub Action** (`.github/workflows/deploy.yml`) macht `git pull` **und startet automatisch nur die Dienste neu** (`systemctl restart pokemon-tracker` + `pokemon-dashboard`). **Du musst nichts von Hand neu starten.** 🛑 **NIEMALS den ganzen Server rebooten** — geteilte VPS (mehrere Bots), das würde alle anderen killen; immer nur den einzelnen Dienst per `systemctl restart <name>`. Daten liegen in SQLite (`pokemon_tracker.db`).
 4. **Doku aktuell halten (PFLICHT):** Nach JEDER nennenswerten Code-Änderung diese CLAUDE.md **im selben Commit** mit aktualisieren (neue Features, geänderte Abläufe, Deploy, Config). Veraltete Doku ist schlimmer als keine. Auch was Kevin als dauerhafte Regel sagt, kommt hierher – nicht nur in den Chat.
 5. **Einfache Sprache, keine unnötigen Fachbegriffe.**
 
@@ -116,10 +116,13 @@ Sammlung/Watchlist legen.** Fokus: **deutsche Karten + Produkte, Cardmarket-Prei
 - **Dashboard-URL:** `http://87.106.255.195:8090` · Passwort: `.env` → `DASHBOARD_PASSWORD`
 
 ### Update-/Deploy-Workflow
-1. Lokal ändern (`C:\Users\Kevin\Desktop\claude projekte\pokemon tracker`)
-2. `git commit` + `git push`
-3. Server: `cd /opt/pokemon-tracker && git pull && systemctl restart pokemon-tracker`
-   Claude macht Schritte 2+3 direkt.
+1. Lokal ändern (`C:\Users\Kevin\Desktop\claude projekte\pokemon-tracker`)
+2. `git commit` + `git push origin main`
+3. Den Rest macht die **GitHub Action** (`.github/workflows/deploy.yml`) automatisch:
+   `git pull` + `systemctl restart pokemon-tracker pokemon-dashboard`.
+   Manueller Fallback nur falls die Action mal ausfällt:
+   `ssh root@87.106.255.195 "cd /opt/pokemon-tracker && git pull && systemctl restart pokemon-tracker pokemon-dashboard"`
+   (Nur diese Dienste neu starten — **nie** den ganzen Server.)
 
 ---
 
